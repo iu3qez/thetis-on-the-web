@@ -144,7 +144,11 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   - Frame con tipo arbitrario, per esempio 7: scartato, contato, un solo log.
   - Frame di 40 byte: trattato come legacy Thetis, non come TCI troncato.
 - **Verification:** dieci minuti di audio deskHPSDR senza clic udibile e senza frame ignoti; il pannello IQ disegna a 48 kHz.
-- **Nota su una issue di origin.** `n9bc/thetis-on-the-web` #12 segnala un ronzio nelle portanti CW, marcata come problema di vecchia data. Il commento nel sorgente dice che l'header da 8 byte di Thetis e' stato determinato per via sperimentale. Se quella determinazione fosse imprecisa, i byte di header residuo verrebbero riprodotti come campioni anche con Thetis, e a 512 campioni su 48 kHz il risultato e' un ronzio a 93,75 Hz. E' un'ipotesi: serve un dump di un frame audio reale di Thetis per confermarla o scartarla, ed e' il primo dato da raccogliere nella ricognizione. Se regge, questa unita' chiude anche una issue di origin, che e' un ottimo motivo per parlare con il manutentore prima di divergere.
+- **Questa unita' ripara anche il caso Thetis, non solo deskHPSDR.** Il commento a `totw.html:4883` dichiara che l'header da 8 byte di Thetis e' stato determinato per via sperimentale. Non lo e': `buildStreamPayload()` in `Project Files/Source/Console/TCIServer.cs` di `ramdor/Thetis` alloca 64 byte piu' payload, scrive receiver, sample rate, tipo di campione, due zeri, lunghezza, tipo di stream e canali come `uint32`, poi otto parole di riserva, e copia i campioni a offset 64. E' lo stesso layout dell'header TCI standard, campo per campo. I presunti otto byte sono i primi otto di quello standard, letti con un layout inventato che combacia solo perche' il receiver 0 riempie di zeri i posti giusti.
+
+  Ne segue che `n9bc/thetis-on-the-web` #12, il ronzio nelle portanti CW aperto come problema di vecchia data, e' quasi certamente questo difetto: 56 byte di header suonati in testa a ogni buffer. Sono interi piccoli e zeri, quindi come `float32` sono denormali, cioe' silenzio: l'artefatto e' un buco periodico, e la dissolvenza di 64 campioni che questa stessa funzione applica ai bordi lo trasforma in una modulazione di ampiezza a 93,75 Hz. Su una portante CW stabile si sente come ronzio; sul parlato e' mascherato.
+
+  **Portare questa diagnosi al manutentore di origin prima di divergere.** Non e' un sospetto: ha i riferimenti al suo sorgente e a quello di Thetis.
 
 ### C2. Sample rate IQ e default di connessione
 
