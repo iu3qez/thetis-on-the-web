@@ -66,6 +66,7 @@ Fuori: qualsiasi modifica al server deskHPSDR; l'audio Opus in TCI; il tool CW; 
 
 - Delta frame sullo spettro, cioe' inviare solo i bin cambiati. Il requisito CLI-04 lo cita come opzionale. Ha senso solo dopo aver misurato la banda reale con deflate attivo: se 512 bin a 10 fps stanno gia' sotto i 15 kbit/s, il delta non si ripaga.
 - Un secondo receiver visualizzato in contemporanea.
+- Lo scheduler audio. La issue #9 di origin descrive un ritardo che peggiora progressivamente e si azzera solo spegnendo e riaccendendo l'audio RX: e' lo scheduler naive gia' noto. Il fork lo eredita e questo piano non lo tocca, perche' riscriverlo e' CLI-08, fuori scopo con DEC-01 = A.
 
 ### Acceptance Examples
 
@@ -143,6 +144,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   - Frame con tipo arbitrario, per esempio 7: scartato, contato, un solo log.
   - Frame di 40 byte: trattato come legacy Thetis, non come TCI troncato.
 - **Verification:** dieci minuti di audio deskHPSDR senza clic udibile e senza frame ignoti; il pannello IQ disegna a 48 kHz.
+- **Nota su una issue di origin.** `n9bc/thetis-on-the-web` #12 segnala un ronzio nelle portanti CW, marcata come problema di vecchia data. Il commento nel sorgente dice che l'header da 8 byte di Thetis e' stato determinato per via sperimentale. Se quella determinazione fosse imprecisa, i byte di header residuo verrebbero riprodotti come campioni anche con Thetis, e a 512 campioni su 48 kHz il risultato e' un ronzio a 93,75 Hz. E' un'ipotesi: serve un dump di un frame audio reale di Thetis per confermarla o scartarla, ed e' il primo dato da raccogliere nella ricognizione. Se regge, questa unita' chiude anche una issue di origin, che e' un ottimo motivo per parlare con il manutentore prima di divergere.
 
 ### C2. Sample rate IQ e default di connessione
 
@@ -282,6 +284,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   - Pagina su https: il microfono chiede il permesso e Web MIDI e' disponibile.
   - Pagina su http da un indirizzo non locale: entrambi negati, il messaggio lo spiega.
 - **Verification:** microfono e MIDI funzionanti da un dispositivo remoto dentro il tunnel.
+- **Conferma dall'utenza di origin:** le issue #8 e #11 di `n9bc/thetis-on-the-web` sono entrambe questo problema, il PTT e il microfono che non funzionano perche' la pagina e' servita in chiaro. Non e' un requisito teorico nostro.
 
 ---
 
@@ -313,3 +316,4 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
 - `n9bc/thetis-on-the-web` a `main`, `totw.html`, letto il 2026-09-09: dispatcher a 4865-4881, handler audio a 4884-4915, oggetto `IQ` a 5865, scrittura di `fftResult` a 5983, mappatura del disegno a 6155-6165, stato dello zoom a 6097, campo host a 3309.
 - `iu3qez/deskhpsdr`, `documentation/deskHPSDR_TCI_Remote_Extensions.md`: contratto del frame `type=4`, comandi `spectrum_*`, `rx_att_ex`, `band_ex`.
 - `iu3qez/deskhpsdr`, `docs/brainstorms/2026-09-08-remote-station-requirements.md`: requisiti CLI-01 e seguenti, decisione DEC-01.
+- Issue aperte di `n9bc/thetis-on-the-web` consultate il 2026-09-10: #8 e #11 (secure context per PTT e microfono), #9 (ritardo audio progressivo), #12 (ronzio nelle portanti CW). Le altre cinque non toccano nessuna unita' di questo piano.
