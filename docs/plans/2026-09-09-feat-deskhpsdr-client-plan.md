@@ -84,7 +84,7 @@ Fuori: qualsiasi modifica al server deskHPSDR; l'audio Opus in TCI; il tool CW; 
 
 - **CTD1 — Dispatch a tabella, non a euristica.** Il riconoscimento del frame diventa: se la lunghezza e' almeno 64 byte, leggi `type` a offset 24 e instrada su una tabella `type -> handler`. Nessun ramo di caduta che suona quello che non ha riconosciuto. Un tipo ignoto viene contato e scartato, con un log una tantum. Questo e' il cuore di CLI-01 e la ragione per cui le altre unita' possono assumere frame ben formati.
 
-  L'alternativa scartata e' tenere il ramo euristico per compatibilita' con Thetis. Non serve: Thetis manda l'header da 8 byte e quello resta riconoscibile per esclusione sulla lunghezza, che e' un test esplicito e non un fallback silenzioso.
+  L'alternativa scartata e' tenere il ramo euristico per compatibilita' con Thetis. Non serve, e per una ragione piu' forte di quella scritta qui in origine: **Thetis non manda un header da 8 byte**, manda lo stesso header standard da 64. Verificato in `buildStreamPayload()` del suo sorgente. Il ramo euristico non protegge nessun caso reale, quindi si toglie e basta.
 
 - **CTD2 — La modalita' a bin scrive in `IQ.fftResult` e nient'altro.** Il codice di disegno legge `IQ.fftResult[bin]` e mappa i pixel via `pxToBin`, che usa `S.iqCentre` e `S.iqSR`. Scrivendo i bin dequantizzati nell'array e impostando quei due valori, il disegno funziona senza toccarlo. E' il requisito CLI-03 e vincola tutte le scelte a valle.
 
