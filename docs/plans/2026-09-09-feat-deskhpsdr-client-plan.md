@@ -149,6 +149,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   Ne segue che `n9bc/thetis-on-the-web` #12, il ronzio nelle portanti CW aperto come problema di vecchia data, e' quasi certamente questo difetto: 56 byte di header suonati in testa a ogni buffer. Sono interi piccoli e zeri, quindi come `float32` sono denormali, cioe' silenzio: l'artefatto e' un buco periodico, e la dissolvenza di 64 campioni che questa stessa funzione applica ai bordi lo trasforma in una modulazione di ampiezza a 93,75 Hz. Su una portante CW stabile si sente come ronzio; sul parlato e' mascherato.
 
   **Portare questa diagnosi al manutentore di origin prima di divergere.** Non e' un sospetto: ha i riferimenti al suo sorgente e a quello di Thetis.
+- **La meta' IQ di questa unita' e' mascherata da C2, non assente.** La condizione `sample_rate > 48000` morde solo con la radio a 48 kHz, ma il `192000` cablato di C2 porta la radio a 192 kHz e quindi la nasconde. Due difetti che si cancellano a vicenda: **correggendo C2 da solo l'IQ sparisce**, e sembrerebbe una regressione introdotta da noi. C1 va fatta prima di C2, o insieme.
 
 ### C2. Sample rate IQ e default di connessione
 
@@ -161,6 +162,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   2. Le due `send('iq_samplerate:192000;')` leggono quel valore.
   3. Il default del campo host passa a `ws://127.0.0.1:40001`, che e' la porta TCI di deskHPSDR. La porta non era cablata nel codice: era solo il valore iniziale del campo, e resta modificabile dall'utente come oggi.
   4. Il messaggio di aiuto alla riga 8163 cita la porta nuova.
+- **Ricognizione del 2026-09-12: questa unita' e' piu' grande, non piu' piccola, di come la descrivono i requisiti.** Il `192000` cablato non e' un default scomodo. `tci_cmd_iq_samplerate()` nel server schedula `ext_set_iq_samplerate` quando nessun client riceve ancora IQ e il rate richiesto differisce da quello del receiver attivo. TOTW manda quel comando appena connesso, quindi **cambia il sample rate della radio dell'operatore da 48 a 192 kHz senza chiedere**. Su WAN l'IQ a 192 kHz float32 stereo e' circa 12 Mbit/s.
 - **Test scenarios:**
   - Connessione a deskHPSDR con i default: la porta e' giusta e la radio risponde.
   - Sample rate IQ impostato a 96000 e poi a 48000: il comando inviato segue il campo.
@@ -294,7 +296,15 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
 
 ## Verification Contract
 
-**Prima di C1**, ricognizione contro TOTW stock connesso a deskHPSDR: registrare la sequenza `audio_samplerate` e `audio_start`, i tipi dei frame ricevuti, e confermare a orecchio e allo spettrogramma il clic a 93,75 Hz e il pannello IQ piatto. Se non si osservano, fermarsi.
+**Ricognizione: eseguita in parte il 2026-09-12, condizione di stop emendata.**
+
+La condizione originale era di fermarsi se non si osservavano il clic a 93,75 Hz e il pannello IQ piatto. **Il pannello IQ non e' piatto**: TOTW conta decine di migliaia di frame e disegna. Non si e' proceduto ignorando la discrepanza: la causa e' accertata sul sorgente ed e' il difetto di C2 che maschera quello di C1, vedi le note delle due unita'.
+
+Condizione di stop rivista: fermarsi se, **con la radio riportata a 48 kHz**, il pannello IQ disegna lo stesso.
+
+La domanda sull'header non richiede piu' osservazione: e' chiusa leggendo `buildStreamPayload()` di Thetis e la struct `TCI_STREAM_HEADER` di deskHPSDR, entrambe da 64 byte. Il clic resta corroborazione utile, non decisiva.
+
+Ancora da raccogliere: il clic all'ascolto, e perche' `vfoA` resta `null` mentre `mode` e' valorizzato.
 
 **Dopo ogni unita'**, il client si apre nel browser e si connette senza errori in console.
 
