@@ -4203,7 +4203,7 @@ function disconnect() {
 function onMsg(evt) {
   if (evt.data instanceof ArrayBuffer) {
     netRx(evt.data.byteLength);
-    rxAudio(evt.data);
+    dispatchBinaryFrame(evt.data);
     return;
   }
   // Text frames
@@ -4753,6 +4753,8 @@ const audioDiag = {
   audioFrames: 0,       // frames with streamType=1
   unknownTypes: {},     // any other stream types seen
   shortFrames: 0,       // frames too short to parse
+  discardedFrames: 0,   // frames dropped because the stream type is unknown
+  spectrumFrames: 0,    // type=4 bin spectrum frames, consumed by C3
   played: 0,            // successfully scheduled for playback
   lastType: null,
   lastSize: null,
@@ -4795,7 +4797,7 @@ async function startRx() {
     el('rxAuC').classList.add('on');
 
     // Reset diagnostic counters
-    Object.assign(audioDiag, {binaryFrames:0,audioFrames:0,unknownTypes:{},shortFrames:0,played:0,lastType:null,lastSize:null,lastSampleCount:null});
+    Object.assign(audioDiag, {binaryFrames:0,audioFrames:0,unknownTypes:{},shortFrames:0,discardedFrames:0,spectrumFrames:0,played:0,lastType:null,lastSize:null,lastSampleCount:null});
 
     // Send all audio init in ONE WebSocket frame to guarantee order.
     // Thetis needs audio_start first, audio_samplerate last to trigger streaming.
@@ -4828,6 +4830,8 @@ async function startRx() {
       log('sys', 'Stream type=1 (RX audio) frames: ' + audioDiag.audioFrames);
       log('sys', 'Frames played to AudioContext: ' + audioDiag.played);
       log('sys', 'Frames too short: ' + audioDiag.shortFrames);
+      log('sys', 'Frames discarded (unknown stream type): ' + audioDiag.discardedFrames);
+      if (audioDiag.spectrumFrames) log('sys', 'Bin spectrum frames seen (await C3): ' + audioDiag.spectrumFrames);
       log('sys', 'AudioContext state now: ' + (S.audioCtx ? S.audioCtx.state : 'null'));
       if (audioDiag.lastType !== null) {
         log('sys', 'Last frame — type:'+audioDiag.lastType+' size:'+audioDiag.lastSize+'b samples:'+audioDiag.lastSampleCount);
@@ -4843,7 +4847,7 @@ async function startRx() {
       } else if (audioDiag.audioFrames === 0) {
         log('err', '⚠ Binary frames received but none are stream type 1 (RX audio).');
         log('err', 'Types seen: '+JSON.stringify(audioDiag.unknownTypes)+' — frame format may differ from expected.');
-        log('err', 'Try disabling header parsing (see diag below for raw bytes).');
+        log('err', 'Types are counted and dropped by design — check the server stream type.');
       } else if (audioDiag.played === 0) {
         log('err', '⚠ RX audio frames received but none played — sample count or buffer issue.');
       } else {
@@ -4862,63 +4866,95 @@ function stopRx() {
   rxNextTime = 0;
 }
 
-function rxAudio(buf) {
+// ── Binary frame dispatch ──
+// Every TCI stream frame carries the standard 64-byte header, and the stream
+// type at offset 24 is what decides the route — not the frame size and not the
+// sample rate. A frame too short to hold that header can only come from a
+// legacy Thetis build with the 8-byte layout, so it reaches the audio handler
+// with that offset instead. A type we do not know is counted and dropped:
+// there is no fall-through branch that plays unrecognised bytes.
+const TCI_HEADER_BYTES    = 64;
+const LEGACY_HEADER_BYTES = 8;
+const STREAM_IQ           = 0;
+const STREAM_RX_AUDIO     = 1;
+const STREAM_TX_CHRONO    = 3;
+const STREAM_SPECTRUM     = 4;
+
+function dispatchBinaryFrame(buf) {
   audioDiag.binaryFrames++;
   audioDiag.lastSize = buf.byteLength;
 
-  // Route by TCI 2.0 64-byte header type field at offset 24
-  // IQ frames: sr=192000 at offset 4, type=0 at offset 24, 2112 bytes total
-  // Audio frames: 8-byte non-standard header, different size
-  if (buf.byteLength >= 64) {
-    const dv = new DataView(buf);
-    const srAt4 = dv.getUint32(4, true);
-    const typeAt24 = dv.getUint32(24, true);
-    if (typeAt24 === 3) { handleTxChrono(dv); return; }  // TX_CHRONO
-    // IQ detection: sample rate > 48000 and type=0, or frame is exactly IQ-sized
-    if (typeAt24 === 0 && srAt4 > 48000 && srAt4 <= 1000000) { handleIQFrame(buf); return; }
-  }
-
-  if (!S.audioCtx || !S.rxOn) return;
-  if (S.audioCtx.state === 'suspended') S.audioCtx.resume();
-
-  // Thetis uses a non-standard header — we determined experimentally:
-  // bytes 0-1: uint16 type (0 in practice), bytes 2-3: uint16 receiver,
-  // bytes 4-7: uint32 = 48000 (sample rate, not count)
-  // Derive float count from payload size, not header field.
-  const MIN_HEADER = 8;
-  if (buf.byteLength < MIN_HEADER) { audioDiag.shortFrames++; tryRawAudio(buf); return; }
-
-  const view      = new DataView(buf);
-  const frameType = view.getUint16(0, true);
-  const receiver  = view.getUint16(2, true);
-  const field3    = view.getUint32(4, true);
-
-  audioDiag.lastType        = frameType;
-  audioDiag.lastSampleCount = field3;
-
-  if (frameType === 0 || frameType === 1) {
-    audioDiag.audioFrames++;
-    if (audioDiag.audioFrames === 1) {
-      log('sys', 'First audio frame: type='+frameType+' recv='+receiver+' field3='+field3+' size='+buf.byteLength+'b');
-      let hex = '';
-      for (let b = 0; b < Math.min(16, buf.byteLength); b++) hex += view.getUint8(b).toString(16).padStart(2,'0')+' ';
-      log('sys', 'First 16 bytes (hex): ' + hex);
-    }
-    // Use payload size to derive float count — field3 is sample rate not count
-    const payloadBytes = buf.byteLength - MIN_HEADER;
-    const actualFloats = Math.floor(payloadBytes / 4);
-    if (actualFloats < 2) { tryRawAudio(buf); return; }
-    playFloat32Stereo(buf, MIN_HEADER, actualFloats);
+  if (buf.byteLength < TCI_HEADER_BYTES) {
+    rxAudioFrame(buf, LEGACY_HEADER_BYTES);
     return;
   }
 
-  // Unknown type — log once
-  if (!audioDiag.unknownTypes[frameType]) {
-    audioDiag.unknownTypes[frameType] = 0;
-    log('sys', 'Binary frame type='+frameType+' recv='+receiver+' field3='+field3+' size='+buf.byteLength+'b');
+  const dv = new DataView(buf);
+  const streamType = dv.getUint32(24, true);
+  audioDiag.lastType = streamType;
+
+  switch (streamType) {
+    case STREAM_IQ:        handleIQFrame(buf); return;
+    case STREAM_RX_AUDIO:  rxAudioFrame(buf, TCI_HEADER_BYTES); return;
+    case STREAM_TX_CHRONO: handleTxChrono(dv); return;
+    case STREAM_SPECTRUM:
+      // Bin spectrum stream. C3 parses it; until then it is counted and
+      // dropped, so a server stream left enabled cannot turn into noise.
+      audioDiag.spectrumFrames++;
+      if (audioDiag.spectrumFrames === 1) log('sys', 'Bin spectrum frames arriving — handler lands with C3');
+      return;
   }
-  audioDiag.unknownTypes[frameType]++;
-  tryRawAudio(buf);
+
+  if (!audioDiag.unknownTypes[streamType]) {
+    audioDiag.unknownTypes[streamType] = 0;
+    log('sys', 'Unknown binary stream type='+streamType+' size='+buf.byteLength+'b — discarded, not played');
+  }
+  audioDiag.unknownTypes[streamType]++;
+  audioDiag.discardedFrames++;
+}
+
+// ── RX audio handler ──
+// The payload offset comes from the caller: 64 for a standard TCI frame, 8 for
+// the legacy Thetis layout. Reading a 64-byte frame from offset 8 is what used
+// to push 56 bytes of header into the audio stream.
+function rxAudioFrame(buf, offset) {
+  if (!S.audioCtx || !S.rxOn) return;
+  if (S.audioCtx.state === 'suspended') S.audioCtx.resume();
+
+  if (buf.byteLength <= offset) { audioDiag.shortFrames++; return; }
+
+  const dv = new DataView(buf);
+  if (offset === TCI_HEADER_BYTES) {
+    // Standard header: payload length in samples at offset 20.
+    audioDiag.lastSampleCount = dv.getUint32(20, true);
+  } else {
+    // Legacy header: uint16 type, uint16 receiver, then a uint32 sample rate.
+    const legacyType = dv.getUint16(0, true);
+    audioDiag.lastType = legacyType;
+    audioDiag.lastSampleCount = dv.getUint32(4, true);
+    if (legacyType !== 0 && legacyType !== 1) {
+      if (!audioDiag.unknownTypes[legacyType]) {
+        audioDiag.unknownTypes[legacyType] = 0;
+        log('sys', 'Unknown legacy frame type='+legacyType+' size='+buf.byteLength+'b — discarded, not played');
+      }
+      audioDiag.unknownTypes[legacyType]++;
+      audioDiag.discardedFrames++;
+      return;
+    }
+  }
+
+  audioDiag.audioFrames++;
+  if (audioDiag.audioFrames === 1) {
+    log('sys', 'First audio frame: payload at offset '+offset+' size='+buf.byteLength+'b samples='+audioDiag.lastSampleCount);
+    let hex = '';
+    for (let b = 0; b < Math.min(16, buf.byteLength); b++) hex += dv.getUint8(b).toString(16).padStart(2,'0')+' ';
+    log('sys', 'First 16 bytes (hex): ' + hex);
+  }
+
+  // Derive the float count from the payload size, never from a header field.
+  const floatCount = Math.floor((buf.byteLength - offset) / 4);
+  if (floatCount < 2) { audioDiag.shortFrames++; return; }
+  playFloat32Stereo(buf, offset, floatCount);
 }
 
 // ── TX_CHRONO handler: Thetis is asking us to send TX audio ──
@@ -4947,26 +4983,6 @@ function playFloat32Stereo(buf, offset, sampleCount) {
     else if (i >= frames - FADE) s = (frames - i) / FADE; // fade out
     L[i] = floats[i * 2]     * s;
     R[i] = floats[i * 2 + 1] * s;
-  }
-  schedulePlayback(ab);
-}
-
-// ── Fallback: try treating entire buffer as raw float32 mono or stereo ──
-// Used when Thetis sends audio without the expected header, or header parsing failed
-function tryRawAudio(buf) {
-  if (!S.audioCtx) return;
-  const totalFloats = Math.floor(buf.byteLength / 4);
-  if (totalFloats < 2) return;
-
-  // Try as interleaved stereo float32 (no header)
-  const frames = Math.floor(totalFloats / 2);
-  const floats = new Float32Array(buf, 0, totalFloats);
-  const ab = S.audioCtx.createBuffer(2, frames, 48000);
-  const L = ab.getChannelData(0);
-  const R = ab.getChannelData(1);
-  for (let i = 0; i < frames; i++) {
-    L[i] = floats[i * 2];
-    R[i] = floats[i * 2 + 1];
   }
   schedulePlayback(ab);
 }
