@@ -48,7 +48,7 @@ Sopra a questo, lo stream IQ float32 costa almeno 3 Mbit/s ed e' inutilizzabile 
 | CLI-05 | Sorgente spettro selezionabile: bin (default su WAN) o IQ+FFT (LAN). | S |
 | CLI-06 | Web MIDI: accesso, dispatcher, learn mode, persistenza, encoder relativi e assoluti, coalescenza, feedback LED. | S |
 | CLI-07 | Tabella azioni MIDI sui comandi TCI stock piu' `rx_att_ex` e `band_ex`. CW escluso. | S |
-| CLI-09 | Servito via https dietro WireGuard, per microfono e Web MIDI in secure context. | M |
+| CLI-09 | Servito via https dietro WireGuard, per microfono e Web MIDI in secure context. Vincolo di deployment, non un'unita': vedi Scope Boundaries. | M |
 
 ### Key Decisions
 
@@ -61,6 +61,8 @@ Sopra a questo, lo stream IQ float32 costa almeno 3 Mbit/s ed e' inutilizzabile 
 Dentro: il consumo delle estensioni TCI di deskHPSDR, il controllo MIDI, il deployment https.
 
 Fuori: qualsiasi modifica al server deskHPSDR; l'audio Opus in TCI; il tool CW; l'integrazione N1MM; il supporto Safari e iOS, che non implementano Web MIDI.
+
+Fuori anche il **deployment**. CLI-09 chiede che il client sia servito in https dietro WireGuard, perche' microfono e Web MIDI richiedono un secure context. E' un vincolo vero ma non produce codice nel client: servire un file statico con TLS appartiene al runbook della stazione, insieme a WireGuard, Mumble e il tool CW. Qui resta solo la sua conseguenza sul codice, cioe' il degrado gestito, che sta in C6.
 
 #### Deferred to Follow-Up Work
 
@@ -110,9 +112,9 @@ Il client ha tre percorsi che questo piano tocca, e restano separati.
 
 ### Sequencing
 
-C1 e' il prerequisito di tutto il resto sui frame: senza dispatch pulito ogni altra unita' lavora su dati che potrebbero essere stati dirottati. C2 e' indipendente e piccolo. C3 dipende da C1. C4 e C5 dipendono da C3. C6 e C7 sono una catena a se' e possono procedere in parallelo. C8 e' configurazione e non dipende da niente.
+C1 e' il prerequisito di tutto il resto sui frame: senza dispatch pulito ogni altra unita' lavora su dati che potrebbero essere stati dirottati. C2 e' indipendente e piccolo. C3 dipende da C1. C4 e C5 dipendono da C3. C6 e C7 sono una catena a se' e possono procedere in parallelo.
 
-Ordine consigliato: C1, C2, C3, poi in parallelo C4 piu' C5 da un lato e C6 piu' C7 dall'altro, C8 quando serve provare il microfono o il MIDI.
+Ordine consigliato: C1, C2, C3, poi in parallelo C4 piu' C5 da un lato e C6 piu' C7 dall'altro.
 
 ### Deferred Implementation Notes
 
@@ -236,7 +238,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
 
 - **Goal:** trasformare i messaggi MIDI in eventi astratti, con learn mode e persistenza.
 - **Requirements:** CLI-06.
-- **Dependencies:** nessuna. Richiede C8 per il secure context.
+- **Dependencies:** nessuna. Richiede che la pagina sia servita in secure context, vincolo di deployment fuori da questo piano.
 - **Files:** `totw.html`, sezione nuova.
 - **Approach:**
   1. `navigator.requestMIDIAccess({ sysex: false })`, elenco degli ingressi, gestione di `statechange` per la console collegata a caldo.
@@ -253,6 +255,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   - Learn mode su un controllo gia' mappato: sostituisce, non duplica.
   - Ricaricamento: la mappatura e' quella di prima.
   - Browser senza Web MIDI, cioe' Safari: la sezione si disabilita con un messaggio, il resto del client funziona.
+  - Pagina servita in chiaro da un indirizzo non locale: microfono e Web MIDI non sono disponibili. L'interfaccia deve dirlo esplicitamente e spiegare perche', invece di sembrare rotta. E' l'unica parte di CLI-09 che e' codice.
 - **Verification:** una console DJ mappata da zero in meno di cinque minuti, funzionante dopo il ricaricamento.
 
 ### C7. Tabella azioni MIDI
@@ -274,23 +277,6 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   - PTT da nota on/off: il TX parte e si ferma; rilascio mancante per messaggio perso, da verificare il fail-safe.
   - Azione su un parametro bloccato da un altro client: l'errore e' mostrato, non ignorato.
 - **Verification:** un contatto completo condotto dalla sola console, senza toccare mouse ne' tastiera.
-
-### C8. Servizio https dietro WireGuard
-
-- **Goal:** servire il client in secure context, che microfono e Web MIDI richiedono.
-- **Requirements:** CLI-09.
-- **Dependencies:** nessuna.
-- **Files:** configurazione fuori dal repo, piu' una nota nel README.
-- **Approach:**
-  1. Il file e' statico: basta un server qualsiasi con TLS sull'indirizzo WireGuard dell'host radio.
-  2. Il certificato puo' essere autofirmato, ma allora va installato come attendibile sul dispositivo, altrimenti il secure context non scatta.
-  3. Il WebSocket TCI passa a `wss://` solo se c'e' un terminatore TLS davanti: deskHPSDR parla `ws://` in chiaro. In alternativa il tunnel WireGuard fa da cifratura e il WebSocket resta in chiaro dentro di esso, che e' la scelta piu' semplice.
-  4. Il bind address del server TCI va messo sull'indirizzo WireGuard, non su tutte le interfacce.
-- **Test scenarios:**
-  - Pagina su https: il microfono chiede il permesso e Web MIDI e' disponibile.
-  - Pagina su http da un indirizzo non locale: entrambi negati, il messaggio lo spiega.
-- **Verification:** microfono e MIDI funzionanti da un dispositivo remoto dentro il tunnel.
-- **Conferma dall'utenza di origin:** le issue #8 e #11 di `n9bc/thetis-on-the-web` sono entrambe questo problema, il PTT e il microfono che non funzionano perche' la pagina e' servita in chiaro. Non e' un requisito teorico nostro.
 
 ---
 
