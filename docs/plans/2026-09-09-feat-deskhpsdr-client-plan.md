@@ -17,7 +17,7 @@ execution: code
 - **Means:** fork di `n9bc/thetis-on-the-web` che consuma le estensioni TCI gia' implementate e congelate nel server deskHPSDR: stream a bin `type=4`, `spectrum_span`, `rx_att_ex`, `band_ex`. Piu' Web MIDI, che non tocca il protocollo.
 - **Authority hierarchy:** il documento dei requisiti in `origin` decide il prodotto (CLI-ID); la specifica in `contract` decide il formato dei frame e non e' negoziabile da qui; questo piano decide il meccanismo lato client (CTD); l'implementatore decide i nomi e i dettagli locali entro le unita'.
 - **Stop conditions:** fermarsi e chiedere se una modifica richiede di cambiare il formato del frame `type=4`, se una unita' richiede di abbandonare il singolo file vanilla JS, o se il consumo dello spettro a bin richiede modifiche al codice di disegno esistente.
-- **Execution profile:** un fork personale, un branch, unita' in ordine di dipendenza. Nessun build step: il file si apre nel browser e si ricarica.
+- **Execution profile:** un fork personale, un branch, unita' in ordine di dipendenza. Il file portabile si apre nel browser e si ricarica, senza compilazione. Esiste pero' un passo di generazione: `website/` e' prodotta da `totw.html` con `scripts/build-variants.js`, ed e' arrivata con la v0.52, cioe' il commit su cui il fork e' allineato. Ogni unita' lo esegue: vedi CTD7.
 - **Tail ownership:** la verifica con la radio ANAN e la simulazione WAN spettano all'operatore (Simo); la ricognizione contro TOTW stock e i test in browser spettano all'implementatore.
 
 ---
@@ -68,6 +68,7 @@ Fuori anche il **deployment**. CLI-09 chiede che il client sia servito in https 
 
 - Delta frame sullo spettro, cioe' inviare solo i bin cambiati. Il requisito CLI-04 lo cita come opzionale. Ha senso solo dopo aver misurato la banda reale con deflate attivo: se 512 bin a 10 fps stanno gia' sotto i 15 kbit/s, il delta non si ripaga.
 - Un secondo receiver visualizzato in contemporanea.
+- **`IQ.fftReady` non si invalida da se'.** Torna falso solo dentro `stopIQ()`, cioe' su azione dell'utente. Se il flusso IQ si interrompe senza stop, per esempio perche' il sample rate della radio scende sotto la soglia che il dispatcher usava, il pannello non si svuota: continua a disegnare l'ultimo fotogramma, congelato. Trovato durante C1 il 2026-09-12 e non corretto, perche' non sta nel perimetro di nessuna unita'. Va deciso se entra in C5, che gia' tocca avvio e arresto dei due stream, o se diventa un'unita' propria. Conseguenza pratica: il discriminante per dire che la traccia e' viva e' `IQ.frameCount` che avanza, non `IQ.fftReady`, ed e' il motivo per cui la condizione di stop della ricognizione era mal posta.
 - Lo scheduler audio. La issue #9 di origin descrive un ritardo che peggiora progressivamente e si azzera solo spegnendo e riaccendendo l'audio RX: e' lo scheduler naive gia' noto. Il fork lo eredita e questo piano non lo tocca, perche' riscriverlo e' CLI-08, fuori scopo con DEC-01 = A.
 
 ### Acceptance Examples
@@ -98,7 +99,11 @@ Fuori anche il **deployment**. CLI-09 chiede che il client sia servito in https 
 
 - **CTD6 — La mappatura MIDI vive in `localStorage`.** Chiave singola, oggetto JSON, versionata. Il learn mode scrive, il dispatcher legge. Nessun server coinvolto.
 
-- **CTD7 — Il file resta uno.** TOTW e' un singolo `totw.html` da 454 kB, vanilla JS, senza build step, e questa e' la sua proprieta' piu' utile: si copia su una chiavetta e funziona. Ogni unita' aggiunge codice li' dentro. Se servisse WASM va incorporato in base64.
+- **CTD7 — Il file portabile resta uno, ma non e' l'unico artefatto.** TOTW e' un singolo `totw.html` da 454 kB, vanilla JS, e questa e' la sua proprieta' piu' utile: si copia su una chiavetta e funziona. Ogni unita' aggiunge codice li' dentro. Se servisse WASM va incorporato in base64.
+
+  Dalla v0.52 il repository contiene anche la variante scomposta in `website/`, generata dal portabile con `scripts/build-variants.js`. **Il portabile e' la sorgente, la variante si rigenera e non si modifica a mano.** Lo script gira nei due versi, `split` e `bundle`, quindi modificare `website/assets/totw.js` e poi lanciare `split` cancella il lavoro senza dire niente. Ogni unita' chiude con `node scripts/build-variants.js split` seguito da `node scripts/smoke-test.js`, che verifica entrambe le varianti.
+
+- **CTD8 — Sul formato del payload audio si crede all'header binario, non al dump di testo.** Il server dichiara `audio_stream_channels:1` nello stato iniziale, ma scrive `channels = 2` nell'header del frame, perche' `TCI_AUDIO_CHANNELS` vale 2. Le due fonti si contraddicono. Oggi il client funziona perche' ignora il testo e assume stereo, cioe' indovina giusto per caso. E' un difetto del server e appartiene al suo repository; da qui la regola e' che l'header binario del frame e' l'unica fonte sul formato del payload. Verificato il 2026-09-12 in `tci_audio.c` e nel dump di stato di un client in sola lettura.
 
 ### High-Level Technical Design
 
@@ -126,6 +131,8 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
 
 ### C1. Dispatch rigoroso dei frame binari
 
+**Stato: implementata il 2026-09-12, verifica al banco ancora da fare.** Commit `e41121a`, PR #12, merge `c29d5d2`. Quello che resta sono i dieci minuti di audio deskHPSDR senza clic e il pannello IQ a 48 kHz, che richiedono la radio; la issue #2 resta aperta per questo. Verificato invece senza radio: gli scenari di prova qui sotto su frame sintetici, `scripts/smoke-test.js`, il parsing dello script inline e il caricamento della pagina con console vuota. `tryRawAudio()` e' stata rimossa invece che lasciata inerte, perche' dopo la correzione non aveva piu' chiamanti e tenerla definita avrebbe invitato a rifare lo stesso errore.
+
 - **Goal:** sostituire il riconoscimento euristico con una tabella sul campo `type`, e insegnare all'handler audio l'header TCI da 64 byte.
 - **Requirements:** CLI-01.
 - **Dependencies:** nessuna.
@@ -139,7 +146,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
 - **Patterns to follow:** lo stile del file, funzioni globali senza moduli, `DataView` con little-endian esplicito, log via `log('sys', ...)`.
 - **Test scenarios:**
   - Frame audio deskHPSDR da 64 byte con `type=1`: riprodotto dall'offset 64, nessun clic, il conteggio dei frame audio sale.
-  - Frame audio Thetis da 8 byte: riprodotto dall'offset 8, comportamento invariato rispetto a oggi.
+  - Frame audio legacy sotto i 64 byte: riprodotto dall'offset 8. **Scenario corretto il 2026-09-12.** Chiedeva un frame audio Thetis da 8 byte riprodotto come oggi, ma la nota di CTD1 stabilisce che Thetis manda l'header standard da 64 byte: un frame Thetis reale va letto dall'offset 64, e il comportamento di oggi e' proprio il difetto che C1 corregge. Da 64 byte in su la regola di dispatch non puo' distinguere un frame legacy, quindi la sola forma sostenibile dello scenario e' quella sotto soglia, che coincide con il caso da 40 byte gia' elencato.
   - Frame IQ deskHPSDR con `sample_rate == 48000` e `type=0`: riconosciuto come IQ, non suonato.
   - Frame IQ Thetis a 192000: riconosciuto come prima.
   - Frame con `type=4` prima che C3 esista: scartato e contato, nessun rumore.
@@ -234,6 +241,8 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   - `spectrum_fps` che scende a 5 sotto saturazione: la UI mostra il valore servito, non quello richiesto.
 - **Verification:** su LAN in modalita' IQ e su 4G in modalita' bin, entrambe utilizzabili senza toccare altro.
 
+- **Il rate IQ non e' per client, e la UI non deve far credere il contrario.** Nel server esiste un `tci_iq_stream_owner`: il primo client che avvia l'IQ fissa il rate dello stream, e ogni client successivo viene coerciato a quello senza errore, come mostra `tci_iq_effective_sample_rate()`. Verificato il 2026-09-12 mandando `iq_samplerate:48000;` mentre un altro client riceveva IQ a 192 kHz: la risposta e' stata `192000`. Quindi il valore da mostrare e' sempre quello che il server risponde, mai quello richiesto.
+
 ### C6. Infrastruttura Web MIDI
 
 - **Goal:** trasformare i messaggi MIDI in eventi astratti, con learn mode e persistenza.
@@ -295,7 +304,7 @@ Condizione di stop rivista: fermarsi se, **con la radio riportata a 48 kHz**, il
 
 La domanda sull'header non richiede piu' osservazione: e' chiusa leggendo `buildStreamPayload()` di Thetis e la struct `TCI_STREAM_HEADER` di deskHPSDR, entrambe da 64 byte. Il clic resta corroborazione utile, non decisiva.
 
-Ancora da raccogliere: il clic all'ascolto, e perche' `vfoA` resta `null` mentre `mode` e' valorizzato.
+Ancora da raccogliere: solo il clic all'ascolto. La domanda su `vfoA` e' chiusa: il dump di stato iniziale del server manda `vfo:0,0,<freq>` con un valore non nullo, verificato il 2026-09-12 con un client TCI in sola lettura, quindi il `null` osservato era transitorio e non e' una issue.
 
 **Dopo ogni unita'**, il client si apre nel browser e si connette senza errori in console.
 
@@ -312,7 +321,7 @@ Ancora da raccogliere: il clic all'ascolto, e perche' `vfoA` resta `null` mentre
 - Le tre unita' obbligatorie sono implementate e verificate al banco.
 - Il client si connette a deskHPSDR con i default, senza clic e con lo spettro a bin funzionante.
 - Nessuna modifica al codice di disegno esistente.
-- Il file resta uno, senza build step.
+- Il file portabile resta uno, e la variante `website/` e' rigenerata da esso invece di essere modificata a mano.
 - Il README documenta la connessione a deskHPSDR e la differenza fra le due sorgenti spettro.
 - Le unita' consigliate sono implementate o esplicitamente rinviate con una ragione.
 
