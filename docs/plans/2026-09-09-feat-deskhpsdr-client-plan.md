@@ -148,7 +148,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
 
   Ne segue che `n9bc/thetis-on-the-web` #12, il ronzio nelle portanti CW aperto come problema di vecchia data, e' quasi certamente questo difetto: 56 byte di header suonati in testa a ogni buffer. Sono interi piccoli e zeri, quindi come `float32` sono denormali, cioe' silenzio: l'artefatto e' un buco periodico, e la dissolvenza di 64 campioni che questa stessa funzione applica ai bordi lo trasforma in una modulazione di ampiezza a 93,75 Hz. Su una portante CW stabile si sente come ronzio; sul parlato e' mascherato.
 
-  **Portare questa diagnosi al manutentore di origin prima di divergere.** Non e' un sospetto: ha i riferimenti al suo sorgente e a quello di Thetis.
+  Il difetto resta documentato qui come motivazione tecnica dell'unita'. **Non si apre nulla verso il manutentore di origin**: decisione dell'operatore del 2026-09-12, non si disturba un collega per una svista del suo assistente. Se un giorno si vorra' contribuire a monte, il materiale e' questo.
 - **La meta' IQ di questa unita' e' mascherata da C2, non assente.** La condizione `sample_rate > 48000` morde solo con la radio a 48 kHz, ma il `192000` cablato di C2 porta la radio a 192 kHz e quindi la nasconde. Due difetti che si cancellano a vicenda: **correggendo C2 da solo l'IQ sparisce**, e sembrerebbe una regressione introdotta da noi. C1 va fatta prima di C2, o insieme.
 
 ### C2. Sample rate IQ e default di connessione
