@@ -247,6 +247,9 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   4. Learn mode: si attiva su un'azione, il primo controllo mosso viene catturato, si chiede la codifica se il controllo sembra un encoder.
   5. Coalescenza a 30-50 ms con vittoria dell'ultimo valore, altrimenti un encoder veloce genera decine di comandi TCI al secondo.
   6. Feedback LED via MIDI out per le azioni a due stati.
+  7. **Degrado incondizionato e forzabile.** Ogni capacita' esterna, secure context, Web MIDI, microfono, viene verificata alla presenza, e la sua assenza produce un messaggio esplicito che dice cosa manca e perche'. Non dipende da come il client e' servito: vale sempre.
+
+     Perche' quel percorso non resti codice mai eseguito, il client accetta parametri di query che forzano lo stato degradato, per esempio `?no-midi`, `?no-mic`, `?insecure`. Costa poche righe e rende il degrado provabile in qualsiasi browser, senza dover ricreare l'ambiente. E' l'unica parte di CLI-09 che e' codice.
 - **Test scenarios:**
   - Console collegata dopo il caricamento: compare senza ricaricare.
   - Encoder in complemento a due: giri orari e antiorari danno delta di segno opposto e modulo giusto.
@@ -255,7 +258,9 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   - Learn mode su un controllo gia' mappato: sostituisce, non duplica.
   - Ricaricamento: la mappatura e' quella di prima.
   - Browser senza Web MIDI, cioe' Safari: la sezione si disabilita con un messaggio, il resto del client funziona.
-  - Pagina servita in chiaro da un indirizzo non locale: microfono e Web MIDI non sono disponibili. L'interfaccia deve dirlo esplicitamente e spiegare perche', invece di sembrare rotta. E' l'unica parte di CLI-09 che e' codice.
+  - Ciascun parametro di forzatura, uno alla volta e tutti insieme: l'interfaccia dice cosa manca, il resto del client continua a funzionare.
+  - **Simulazione reale, come conferma dei parametri.** Secure context: servire la pagina sull'indirizzo di LAN in chiaro, non su `localhost`, che i browser trattano come sicuro. Web MIDI assente: Safari. Microfono: negare il permesso alla richiesta.
+  - Il browser abituale dell'operatore e' Firefox, la cui Web MIDI richiede un permesso esplicito: da verificare come si comporta, perche' e' un caso di degrado reale e quotidiano, non un'ipotesi.
 - **Verification:** una console DJ mappata da zero in meno di cinque minuti, funzionante dopo il ricaricamento.
 
 ### C7. Tabella azioni MIDI
