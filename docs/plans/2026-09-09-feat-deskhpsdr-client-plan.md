@@ -32,7 +32,7 @@ Il piano porta TOTW da client di Thetis a client di deskHPSDR. Tre unita' obblig
 
 TOTW e' scritto per Thetis e riconosce i frame binari per euristica, non per contratto. Il risultato con deskHPSDR e' che l'audio si sente sporco e l'IQ non arriva affatto, per due cause distinte verificate nel sorgente:
 
-- **L'audio.** Il dispatcher a `totw.html:4871` guarda il tipo a offset 24 solo per riconoscere `3` (TX_CHRONO) e `0` (IQ). Ogni altro tipo cade nel ramo audio, che assume un header non standard da 8 byte perche' Thetis usa quello. deskHPSDR manda l'header TCI regolare da 64 byte con `type=1`, quindi i 56 byte di header residuo vengono riprodotti come 14 float, cioe' 7 frame stereo di rumore per buffer. A 512 campioni su 48 kHz sono 93,75 clic al secondo.
+- **L'audio.** Il dispatcher a `totw.html:4871` guarda il tipo a offset 24 solo per riconoscere `3` (TX_CHRONO) e `0` (IQ). Ogni altro tipo cade nel ramo audio, che assume un header non standard da 8 byte perche' Thetis usa quello. deskHPSDR manda l'header TCI regolare da 64 byte con `type=1`, quindi i 56 byte di header residuo vengono riprodotti come 14 float, cioe' 7 frame stereo spuri in testa a ogni buffer. Sono interi piccoli e zeri, quindi come `float32` sono denormali: un buco, non rumore. **Questo difetto non e' la causa del ronzio udibile**, vedi la nota rivista di C1: il ronzio lo produce la dissolvenza per buffer di `playFloat32Stereo`, che nessuna unita' di questo piano tocca.
 - **L'IQ.** La condizione a `totw.html:4878` e' `srAt4 > 48000`, stretta. deskHPSDR a 48 kHz non la soddisfa, quindi anche i frame IQ finiscono nel ramo audio e vengono suonati come rumore.
 
 Sopra a questo, lo stream IQ float32 costa almeno 3 Mbit/s ed e' inutilizzabile su 4G. Il server deskHPSDR espone gia' lo stream a bin che risolve il problema di banda, ma nessun client lo consuma: questo fork e' il primo.
@@ -69,11 +69,12 @@ Fuori anche il **deployment**. CLI-09 chiede che il client sia servito in https 
 - Delta frame sullo spettro, cioe' inviare solo i bin cambiati. Il requisito CLI-04 lo cita come opzionale. Ha senso solo dopo aver misurato la banda reale con deflate attivo: se 512 bin a 10 fps stanno gia' sotto i 15 kbit/s, il delta non si ripaga.
 - Un secondo receiver visualizzato in contemporanea.
 - **`IQ.fftReady` non si invalida da se'.** Torna falso solo dentro `stopIQ()`, cioe' su azione dell'utente. Se il flusso IQ si interrompe senza stop, per esempio perche' il sample rate della radio scende sotto la soglia che il dispatcher usava, il pannello non si svuota: continua a disegnare l'ultimo fotogramma, congelato. Trovato durante C1 il 2026-09-12 e non corretto, perche' non sta nel perimetro di nessuna unita'. Va deciso se entra in C5, che gia' tocca avvio e arresto dei due stream, o se diventa un'unita' propria. Conseguenza pratica: il discriminante per dire che la traccia e' viva e' `IQ.frameCount` che avanza, non `IQ.fftReady`, ed e' il motivo per cui la condizione di stop della ricognizione era mal posta.
+- **La dissolvenza per buffer di `playFloat32Stereo`.** Attenua un quarto di ogni buffer, ai due bordi, senza nessuna condizione: su un flusso continuo e' una modulazione di ampiezza a 93,75 Hz, cioe' la cadenza dei buffer. E' il ronzio che si sente sulle portanti CW, ed e' la causa piu' probabile della issue #12 a monte. Misurato il 2026-09-12 replicando la funzione. Nessuna unita' di questo piano la tocca, e va deciso se entra qui o se appartiene allo scheduler audio, che e' CLI-08 e sta fuori scopo per DEC-01 = A. Il commento nel sorgente la dichiara breve quanto basta a essere inudibile, e su un flusso continuo non lo e'.
 - Lo scheduler audio. La issue #9 di origin descrive un ritardo che peggiora progressivamente e si azzera solo spegnendo e riaccendendo l'audio RX: e' lo scheduler naive gia' noto. Il fork lo eredita e questo piano non lo tocca, perche' riscriverlo e' CLI-08, fuori scopo con DEC-01 = A.
 
 ### Acceptance Examples
 
-1. **Audio pulito.** Connesso a deskHPSDR, con l'audio TCI attivo, dieci minuti di ascolto senza il clic periodico. Il contatore dei frame audio sale, quello dei frame di tipo sconosciuto resta a zero.
+1. **Audio senza campioni spuri.** Connesso a deskHPSDR, con l'audio TCI attivo, il contatore dei frame audio sale, quello dei frame di tipo sconosciuto resta a zero, e nessun campione di header entra nel flusso. **Corretto il 2026-09-12**: questo esempio chiedeva dieci minuti senza il clic periodico, che non e' ottenibile da nessuna unita' di questo piano, perche' la modulazione udibile a 93,75 Hz e' prodotta dalla dissolvenza per buffer e non dall'offset del payload.
 2. **IQ a 48 k.** Con la sorgente spettro su IQ, il pannello disegna la traccia e `S.iqSR` vale 48000. Prima di questo piano il pannello resta piatto.
 3. **Spettro a bin.** Con la sorgente su bin e `spectrum_start:0,512,10;`, la traccia e' sovrapponibile a quella IQ sulla stessa porzione di banda, con lo stesso floor entro 1 dB.
 4. **Zoom che chiede.** Portando lo zoom da 1 a 8 il client invia `spectrum_span` con lo span ristretto, e la risoluzione visibile migliora davvero invece di ingrandire gli stessi bin.
@@ -131,7 +132,7 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
 
 ### C1. Dispatch rigoroso dei frame binari
 
-**Stato: implementata il 2026-09-12, verifica al banco ancora da fare.** Commit `e41121a`, PR #12, merge `c29d5d2`. Quello che resta sono i dieci minuti di audio deskHPSDR senza clic e il pannello IQ a 48 kHz, che richiedono la radio; la issue #2 resta aperta per questo. Verificato invece senza radio: gli scenari di prova qui sotto su frame sintetici, `scripts/smoke-test.js`, il parsing dello script inline e il caricamento della pagina con console vuota. `tryRawAudio()` e' stata rimossa invece che lasciata inerte, perche' dopo la correzione non aveva piu' chiamanti e tenerla definita avrebbe invitato a rifare lo stesso errore.
+**Stato: implementata il 2026-09-12, verifica al banco ancora da fare.** Commit `e41121a`, PR #12, merge `c29d5d2`. Quello che resta e' il pannello IQ che disegna con la radio a 48 kHz, che richiede la radio; la issue #2 resta aperta per questo. Verificato invece senza radio: gli scenari di prova qui sotto su frame sintetici, `scripts/smoke-test.js`, il parsing dello script inline e il caricamento della pagina con console vuota. `tryRawAudio()` e' stata rimossa invece che lasciata inerte, perche' dopo la correzione non aveva piu' chiamanti e tenerla definita avrebbe invitato a rifare lo stesso errore.
 
 - **Goal:** sostituire il riconoscimento euristico con una tabella sul campo `type`, e insegnare all'handler audio l'header TCI da 64 byte.
 - **Requirements:** CLI-01.
@@ -145,17 +146,17 @@ La ricognizione contro TOTW stock descritta nel piano di verifica dei requisiti 
   5. Il conteggio diagnostico esistente in `audioDiag` guadagna un campo per i frame scartati per tipo ignoto.
 - **Patterns to follow:** lo stile del file, funzioni globali senza moduli, `DataView` con little-endian esplicito, log via `log('sys', ...)`.
 - **Test scenarios:**
-  - Frame audio deskHPSDR da 64 byte con `type=1`: riprodotto dall'offset 64, nessun clic, il conteggio dei frame audio sale.
+  - Frame audio deskHPSDR da 64 byte con `type=1`: riprodotto dall'offset 64, nessun campione di header nel flusso, il conteggio dei frame audio sale.
   - Frame audio legacy sotto i 64 byte: riprodotto dall'offset 8. **Scenario corretto il 2026-09-12.** Chiedeva un frame audio Thetis da 8 byte riprodotto come oggi, ma la nota di CTD1 stabilisce che Thetis manda l'header standard da 64 byte: un frame Thetis reale va letto dall'offset 64, e il comportamento di oggi e' proprio il difetto che C1 corregge. Da 64 byte in su la regola di dispatch non puo' distinguere un frame legacy, quindi la sola forma sostenibile dello scenario e' quella sotto soglia, che coincide con il caso da 40 byte gia' elencato.
   - Frame IQ deskHPSDR con `sample_rate == 48000` e `type=0`: riconosciuto come IQ, non suonato.
   - Frame IQ Thetis a 192000: riconosciuto come prima.
   - Frame con `type=4` prima che C3 esista: scartato e contato, nessun rumore.
   - Frame con tipo arbitrario, per esempio 7: scartato, contato, un solo log.
   - Frame di 40 byte: trattato come legacy Thetis, non come TCI troncato.
-- **Verification:** dieci minuti di audio deskHPSDR senza clic udibile e senza frame ignoti; il pannello IQ disegna a 48 kHz.
+- **Verification:** con la radio a 48 kHz il pannello IQ disegna e `IQ.frameCount` avanza; il contatore dei frame di tipo ignoto resta a zero; il primo frame audio registrato nel log mostra il payload letto dall'offset 64. **Criterio corretto il 2026-09-12**: chiedeva dieci minuti di audio senza clic udibile, e quel criterio avrebbe bocciato questa unita' pur essendo corretta, perche' il clic non dipende da cio' che l'unita' cambia. Vedi `docs/solutions/best-practices/falsifiable-acceptance-criteria-in-plans.md`.
 - **Questa unita' ripara anche il caso Thetis, non solo deskHPSDR.** Il commento a `totw.html:4883` dichiara che l'header da 8 byte di Thetis e' stato determinato per via sperimentale. Non lo e': `buildStreamPayload()` in `Project Files/Source/Console/TCIServer.cs` di `ramdor/Thetis` alloca 64 byte piu' payload, scrive receiver, sample rate, tipo di campione, due zeri, lunghezza, tipo di stream e canali come `uint32`, poi otto parole di riserva, e copia i campioni a offset 64. E' lo stesso layout dell'header TCI standard, campo per campo. I presunti otto byte sono i primi otto di quello standard, letti con un layout inventato che combacia solo perche' il receiver 0 riempie di zeri i posti giusti.
 
-  Ne segue che `n9bc/thetis-on-the-web` #12, il ronzio nelle portanti CW aperto come problema di vecchia data, e' quasi certamente questo difetto: 56 byte di header suonati in testa a ogni buffer. Sono interi piccoli e zeri, quindi come `float32` sono denormali, cioe' silenzio: l'artefatto e' un buco periodico, e la dissolvenza di 64 campioni che questa stessa funzione applica ai bordi lo trasforma in una modulazione di ampiezza a 93,75 Hz. Su una portante CW stabile si sente come ronzio; sul parlato e' mascherato.
+  **Attribuzione rivista il 2026-09-12, misurata.** Questa nota attribuiva a quei 56 byte la issue #12 di `n9bc/thetis-on-the-web`, il ronzio nelle portanti CW, con la dissolvenza nel ruolo di modellatore del buco. La misura dice altro. La dissolvenza di `Math.min(64, frames >> 2)` campioni che `playFloat32Stereo` applica ai bordi di **ogni** buffer attenua da sola un quarto di ogni buffer, 93,75 volte al secondo, che e' semplicemente 48000/512, la cadenza dei buffer: replicando la funzione su una portante continua, la riga di modulazione resta a 93,75 Hz con e senza l'offset corretto e scompare solo rimuovendo la dissolvenza. I 56 byte sono denormali, cioe' un buco di 7 frame che cade dentro la rampa di apertura, quindi mascherato dal meccanismo dominante. **L'attribuzione della #12 all'header va considerata non dimostrata**, ed e' piu' probabile che la causa sia la dissolvenza.
 
   Il difetto resta documentato qui come motivazione tecnica dell'unita'. **Non si apre nulla verso il manutentore di origin**: decisione dell'operatore del 2026-09-12, non si disturba un collega per una svista del suo assistente. Se un giorno si vorra' contribuire a monte, il materiale e' questo.
 - **La meta' IQ di questa unita' e' mascherata da C2, non assente.** La condizione `sample_rate > 48000` morde solo con la radio a 48 kHz, ma il `192000` cablato di C2 porta la radio a 192 kHz e quindi la nasconde. Due difetti che si cancellano a vicenda: **correggendo C2 da solo l'IQ sparisce**, e sembrerebbe una regressione introdotta da noi. C1 va fatta prima di C2, o insieme.
@@ -302,9 +303,9 @@ La condizione originale era di fermarsi se non si osservavano il clic a 93,75 Hz
 
 Condizione di stop rivista: fermarsi se, **con la radio riportata a 48 kHz**, il pannello IQ disegna lo stesso.
 
-La domanda sull'header non richiede piu' osservazione: e' chiusa leggendo `buildStreamPayload()` di Thetis e la struct `TCI_STREAM_HEADER` di deskHPSDR, entrambe da 64 byte. Il clic resta corroborazione utile, non decisiva.
+La domanda sull'header non richiede piu' osservazione: e' chiusa leggendo `buildStreamPayload()` di Thetis e la struct `TCI_STREAM_HEADER` di deskHPSDR, entrambe da 64 byte.
 
-Ancora da raccogliere: solo il clic all'ascolto. La domanda su `vfoA` e' chiusa: il dump di stato iniziale del server manda `vfo:0,0,<freq>` con un valore non nullo, verificato il 2026-09-12 con un client TCI in sola lettura, quindi il `null` osservato era transitorio e non e' una issue.
+Niente piu' da raccogliere. Il clic non serve come corroborazione e non lo sarebbe mai stato: e' stato spiegato per misura il 2026-09-12, e misura la dissolvenza per buffer, non l'offset del payload. La domanda su `vfoA` e' chiusa: il dump di stato iniziale del server manda `vfo:0,0,<freq>` con un valore non nullo, verificato il 2026-09-12 con un client TCI in sola lettura, quindi il `null` osservato era transitorio e non e' una issue.
 
 **Dopo ogni unita'**, il client si apre nel browser e si connette senza errori in console.
 
@@ -319,7 +320,7 @@ Ancora da raccogliere: solo il clic all'ascolto. La domanda su `vfoA` e' chiusa:
 ## Definition of Done
 
 - Le tre unita' obbligatorie sono implementate e verificate al banco.
-- Il client si connette a deskHPSDR con i default, senza clic e con lo spettro a bin funzionante.
+- Il client si connette a deskHPSDR con i default, senza campioni di header nel flusso audio e con lo spettro a bin funzionante.
 - Nessuna modifica al codice di disegno esistente.
 - Il file portabile resta uno, e la variante `website/` e' rigenerata da esso invece di essere modificata a mano.
 - Il README documenta la connessione a deskHPSDR e la differenza fra le due sorgenti spettro.

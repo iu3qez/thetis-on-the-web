@@ -45,7 +45,9 @@ La condizione di stop emendata chiedeva di fermarsi se, con la radio a 48 kHz, i
 
 Attenzione a non ripetere l'errore che quella condizione conteneva: **`IQ.fftReady` non torna falso da se'**, quindi il pannello si congela invece di svuotarsi e disegna lo stesso. Il discriminante giusto e' `IQ.frameCount` che avanza. Il difetto e' registrato nel piano sotto Deferred, non assegnato a nessuna unita'.
 
-La domanda su `vfoA: null` e' chiusa, non era una issue. Il clic all'ascolto resta l'unica cosa da raccogliere, e il piano lo declassa a corroborazione non decisiva.
+La domanda su `vfoA: null` e' chiusa, non era una issue.
+
+**Correzione del 2026-09-12, piu' tarda del resto di questo documento.** Dove sopra si leggeva che restava da raccogliere il clic all'ascolto: non resta niente, ed e' stato chiuso per misura invece che per ascolto. Il clic non dipende dall'offset del payload, cioe' da cio' che C1 corregge: lo produce la dissolvenza di 64 campioni che `playFloat32Stereo` applica ai bordi di ogni buffer, che attenua un quarto del buffer 93,75 volte al secondo, cioe' alla cadenza dei buffer. Replicando la funzione, la riga di modulazione resta identica con e senza la correzione di C1 e scompare solo togliendo la dissolvenza. Ne seguono tre cose: **C1 non elimina il ronzio** e il corpo della PR #12 afferma il contrario, quindi e' sbagliato; l'attribuzione della issue #12 a monte all'header e' da considerare non dimostrata; e la dissolvenza e' un difetto noto che nessuna unita' tocca, registrato fra i rinviati nel piano. Il ragionamento per esteso sta in `docs/solutions/best-practices/falsifiable-acceptance-criteria-in-plans.md`.
 
 ## Decisioni, e di chi sono
 
@@ -76,7 +78,7 @@ Mie, prese senza chiedere perche' reversibili o di routine:
 
 Fatte su `e41121a`: gli scenari di dispatch del piano su frame sintetici, tutti passati; `node scripts/smoke-test.js`; il parsing dello script inline con `node --check`; il caricamento della pagina in browser con console vuota e le funzioni nuove presenti nello scope.
 
-**Manca la verifica al banco**, che e' l'accettazione vera: dieci minuti di audio deskHPSDR senza clic udibile e senza frame di tipo ignoto, e il pannello IQ che disegna con la radio a 48 kHz.
+**Manca la verifica al banco**, che e' l'accettazione vera, nella forma corretta il 2026-09-12: con la radio a 48 kHz il pannello IQ disegna e `IQ.frameCount` avanza, il contatore dei frame di tipo ignoto resta a zero, e il primo frame audio nel log mostra il payload letto dall'offset 64. Non aspettarsi la scomparsa del ronzio: non dipende da C1.
 
 ## Blocchi e stato locale fragile
 
@@ -91,5 +93,6 @@ Un percorso unico, in sequenza, non alternative: **C2 (#3)**, poi la **verifica 
 
 Due cose indipendenti, che non bloccano nulla:
 
+- Decidere se e dove correggere la dissolvenza per buffer di `playFloat32Stereo`, che e' il vero ronzio. Confina con CLI-08, lo scheduler audio, che DEC-01 mette fuori scopo: per questo la decisione non e' automatica.
 - Decidere dove vive la correzione di `IQ.fftReady`: dentro C5, che gia' tocca avvio e arresto degli stream, oppure in un'unita' propria.
 - Portare nel repository di deskHPSDR la contraddizione sui canali audio, `audio_stream_channels:1` nel testo contro `channels = 2` nell'header. E' un difetto del server e appartiene al suo handoff.
