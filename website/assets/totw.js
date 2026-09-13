@@ -714,6 +714,7 @@ const audioDiag = {
   audioFrames: 0,       // frames with streamType=1
   unknownTypes: {},     // any other stream types seen
   shortFrames: 0,       // frames too short to parse
+  gaps: 0,              // playback discontinuities smoothed with ramps
   discardedFrames: 0,   // frames dropped because the stream type is unknown
   spectrumFrames: 0,    // type=4 bin spectrum frames, consumed by C3
   played: 0,            // successfully scheduled for playback
@@ -724,6 +725,11 @@ const audioDiag = {
 
 // Scheduled playback time for gapless audio
 let rxNextTime = 0;
+// Ramps are applied only where the stream is actually broken, see schedulePlayback.
+const RX_FADE_S    = 64 / 48000;   // ramp length at a discontinuity
+const RX_QUANTUM_S = 128 / 48000;  // one Web Audio render quantum, used as scheduling margin
+let rxLastGain   = null;           // gain node of the last scheduled buffer
+let rxLastFadeAt = 0;              // when that buffer's provisional fade-out begins
 
 async function startRx() {
   try {
@@ -754,11 +760,12 @@ async function startRx() {
     }
 
     rxNextTime = S.audioCtx.currentTime + 0.05;
+    rxLastGain = null; rxLastFadeAt = 0;
     S.rxOn = true;
     el('rxAuC').classList.add('on');
 
     // Reset diagnostic counters
-    Object.assign(audioDiag, {binaryFrames:0,audioFrames:0,unknownTypes:{},shortFrames:0,discardedFrames:0,spectrumFrames:0,played:0,lastType:null,lastSize:null,lastSampleCount:null});
+    Object.assign(audioDiag, {binaryFrames:0,audioFrames:0,unknownTypes:{},shortFrames:0,gaps:0,discardedFrames:0,spectrumFrames:0,played:0,lastType:null,lastSize:null,lastSampleCount:null});
 
     // Send all audio init in ONE WebSocket frame to guarantee order.
     // Thetis needs audio_start first, audio_samplerate last to trigger streaming.
@@ -791,6 +798,7 @@ async function startRx() {
       log('sys', 'Stream type=1 (RX audio) frames: ' + audioDiag.audioFrames);
       log('sys', 'Frames played to AudioContext: ' + audioDiag.played);
       log('sys', 'Frames too short: ' + audioDiag.shortFrames);
+      log('sys', 'Playback discontinuities smoothed: ' + audioDiag.gaps);
       log('sys', 'Frames discarded (unknown stream type): ' + audioDiag.discardedFrames);
       if (audioDiag.spectrumFrames) log('sys', 'Bin spectrum frames seen (await C3): ' + audioDiag.spectrumFrames);
       log('sys', 'AudioContext state now: ' + (S.audioCtx ? S.audioCtx.state : 'null'));
@@ -825,6 +833,7 @@ function stopRx() {
   if (S.connected) send('audio_stop:0;');
   if (S.audioCtx) { S.audioCtx.close(); S.audioCtx = null; S.analyser = null; }
   rxNextTime = 0;
+  rxLastGain = null; rxLastFadeAt = 0;
 }
 
 // ── Binary frame dispatch ──
@@ -935,28 +944,57 @@ function playFloat32Stereo(buf, offset, sampleCount) {
   const L = ab.getChannelData(0);
   const R = ab.getChannelData(1);
 
-  // Fade length: 64 samples (~1.3ms at 48kHz) — enough to kill clicks, short enough to be inaudible
-  const FADE = Math.min(64, frames >> 2);
-
+  // Samples are copied unmodified. Consecutive buffers are consecutive pieces
+  // of one continuous stream, so there is no edge to soften between them: a
+  // fade on every buffer amplitude-modulates the stream at the buffer rate.
   for (let i = 0; i < frames; i++) {
-    let s = 1.0;
-    if (i < FADE)             s = i / FADE;           // fade in
-    else if (i >= frames - FADE) s = (frames - i) / FADE; // fade out
-    L[i] = floats[i * 2]     * s;
-    R[i] = floats[i * 2 + 1] * s;
+    L[i] = floats[i * 2];
+    R[i] = floats[i * 2 + 1];
   }
   schedulePlayback(ab);
 }
 
 // ── Schedule a buffer for gapless playback ──
+// Each buffer plays through its own gain node and carries a provisional
+// fade-out on its last samples. When the next buffer arrives in time that
+// fade-out is cancelled, so contiguous buffers join at unity gain. When it
+// arrives late, the fade-out stays and the new buffer fades in: ramps exist
+// only at real discontinuities, and on both sides of them.
 function schedulePlayback(ab) {
-  const now = S.audioCtx.currentTime;
+  const ctx = S.audioCtx;
+  const now = ctx.currentTime;
+  const fade = Math.min(RX_FADE_S, ab.duration / 4);
+  // Late: the previous fade-out can no longer be cancelled cleanly, because the
+  // scheduler fell behind or the ramp is about to start within one quantum.
+  const late = rxLastGain === null || now > rxLastFadeAt - RX_QUANTUM_S;
   if (rxNextTime < now) rxNextTime = now + 0.02;
-  const src = S.audioCtx.createBufferSource();
+
+  const src = ctx.createBufferSource();
   src.buffer = ab;
-  src.connect(S.analyser || S.audioCtx.destination);
-  src.start(rxNextTime);
-  rxNextTime += ab.duration;
+  const g = ctx.createGain();
+  src.connect(g);
+  g.connect(S.analyser || ctx.destination);
+  src.onended = () => { src.disconnect(); g.disconnect(); };
+
+  const t0 = rxNextTime, t1 = t0 + ab.duration;
+  if (late) {
+    if (rxLastGain !== null) audioDiag.gaps++;
+    // Silent from creation, not just from t0: the source start and the gain
+    // event round t0 to a sample frame differently, and for one frame the
+    // default gain of 1 would otherwise let the first sample through at full level.
+    g.gain.value = 0;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(1, t0 + fade);
+  } else {
+    rxLastGain.gain.cancelScheduledValues(rxLastFadeAt);
+  }
+  g.gain.setValueAtTime(1, t1 - fade);
+  g.gain.linearRampToValueAtTime(0, t1);
+
+  src.start(t0);
+  rxLastGain = g;
+  rxLastFadeAt = t1 - fade;
+  rxNextTime = t1;
   audioDiag.played++;
   drawAuMeter(ab.getChannelData(0));
 }
