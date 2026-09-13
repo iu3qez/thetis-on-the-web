@@ -18,7 +18,7 @@ tags: [criteri-accettazione, falsificabilita, piani, verifica, totw, tci]
 
 ## Context
 
-Durante l'implementazione di C1 (issue #2, integrata con la PR #12) tre criteri di accettazione del piano `docs/plans/2026-09-09-feat-deskhpsdr-client-plan.md` si sono rivelati incapaci di falsificare quello che dichiaravano di verificare. Tutti e tre sono stati scoperti leggendo il sorgente o misurando, non osservando il comportamento del client. Il piano e' stato emendato in due passaggi sul branch d'integrazione `plan/deskhpsdr-client`: la condizione di stop rivista alla riga 303 viene dal commit `9c064c6`, mentre le righe 71 e 149 vengono da `51f9ade`. In questo fork `main` resta allineato a monte e non e' il ramo d'integrazione, quindi i commit citati qui si risolvono contro `plan/deskhpsdr-client`.
+Durante l'implementazione di C1 (issue #2, integrata con la PR #12) tre criteri di accettazione del piano `docs/plans/2026-09-09-feat-deskhpsdr-client-plan.md` si sono rivelati incapaci di falsificare quello che dichiaravano di verificare. Tutti e tre sono stati scoperti leggendo il sorgente o misurando, non osservando il comportamento del client. Il piano e' stato emendato in due passaggi sul branch d'integrazione `plan/deskhpsdr-client`: la condizione di stop rivista alla riga 303 viene dal commit `9c064c6`, mentre le righe 71 e 149 vengono da `51f9ade`. In questo fork `main` resta allineato a monte e non e' il ramo d'integrazione, quindi i commit citati qui si risolvono contro `plan/deskhpsdr-client`. I riferimenti di riga a `totw.html` valgono al commit `364da83`: le modifiche successive li spostano, e il codice citato resta riconoscibile dal nome della funzione.
 
 Il contesto che rende il comportamento un oracolo inaffidabile in questa unita' e' documentato alla riga 161 del piano: **due difetti si mascheravano a vicenda**. Il client cablava `iq_samplerate:192000` alla connessione, cosa ancora vera nel tree a `totw.html:4154` e a `totw.html:6008`, dentro `startIQ()`. Quel comando alza il sample rate della radio a 192 kHz, e 192 kHz soddisfa esattamente il gate rotto `srAt4 > 48000` che C1 doveva rimuovere. Il sintomo osservabile, "l'IQ funziona", era vero mentre il meccanismo era sbagliato: correggendo uno solo dei due difetti il pannello sparisce e sembra una regressione introdotta da noi.
 
@@ -172,6 +172,8 @@ Due conseguenze. Il criterio avrebbe dichiarato fallita un'unita' corretta. E la
 
 **Forma sana del criterio**: misurare la profondita' di modulazione a 93,75 Hz sul flusso riprodotto, e verificare che C1 riduca a zero i frame di tipo ignoto e i campioni spuri in testa al buffer, senza promettere nulla sul ronzio finche' la dissolvenza resta dov'e'.
 
+**Seguito, 2026-09-13.** La dissolvenza e' stata tolta: i campioni passano intatti e le rampe compaiono solo su una discontinuita' vera di riproduzione. Verificata con lo scheduler vero dentro un `OfflineAudioContext`, su una portante a 700 Hz: le bande a +/-93,75 Hz scendono da -17,4 a -186 dBc. La verifica ha prodotto altri due esempi della stessa lezione. Il primo controllo del buco da 25 ms e' passato misurando la coda di silenzio dopo la fine del flusso, cioe' per la ragione sbagliata, ed e' stato ristretto all'interno del flusso. E un gradino da 0,43 sul primo campione dopo un buco e' emerso solo provando istanti di salto non allineati ai campioni, che sono il caso reale: il nodo di guadagno partiva da 1 e sorgente ed evento arrotondavano l'istante in modo diverso.
+
 ### Cosa ha cambiato C1, per riferimento
 
 Il gate euristico rimosso dal commit `e41121a`, raggiungibile dal tree attraverso il merge della PR #12:
@@ -187,8 +189,8 @@ sostituito dal dispatch sul tipo di stream a offset 24 in `dispatchBinaryFrame()
 
 Nessun apprendimento precedente si sovrappone a questo: `docs/solutions/` non esisteva prima di questo documento, quindi la sovrapposizione con il corpus e' nulla su tutte e cinque le dimensioni.
 
-- `docs/plans/2026-09-09-feat-deskhpsdr-client-plan.md` — il documento che conteneva i tre criteri. Righe 71, 149 e 303 portano le correzioni dei primi due; il criterio di verifica di C1 e la nota CTD1 sull'attribuzione del ronzio restano da correggere alla luce del caso C.
-- `docs/handoffs/2026-09-12-c1-merged-c2-next.md` — stato dopo C1 e trappole verificate. La sua ricostruzione del meccanismo del ronzio e' superata dal caso C.
+- `docs/plans/2026-09-09-feat-deskhpsdr-client-plan.md` — il documento che conteneva i tre criteri. Righe 71, 149 e 303 portano le correzioni dei primi due; il criterio di verifica di C1 e la nota CTD1 sull'attribuzione del ronzio sono stati corretti alla luce del caso C nel commit `364da83`.
+- `docs/handoffs/2026-09-12-c1-merged-c2-next.md` — stato dopo C1 e trappole verificate. La sua ricostruzione del meccanismo del ronzio e' superata dal caso C, e l'handoff lo dichiara con una correzione datata.
 - `docs/handoffs/2026-09-12-totw-handoff.md` — handoff superato, conservato per tracciabilita'. Contiene l'attribuzione originale del ronzio all'header.
 - `README.md` — da aggiornare quando C1 e C3 saranno verificate al banco, per la Definition of Done del piano.
 - Issue `#1` (ricognizione) e `#2` (C1) di `iu3qez/thetis-on-the-web`: i criteri qui discussi provengono da queste due. `#3` (C2) porta il vincolo d'ordine del mascheramento reciproco.

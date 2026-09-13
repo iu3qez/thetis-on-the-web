@@ -15,6 +15,8 @@ worktree_path: "/Users/sf/Developer/thetis-on-the-web/.claude/worktrees/handoff-
 
 # Handoff — TOTW per deskHPSDR, dopo C1
 
+**Aggiornamento del 2026-09-13, piu' tardo del resto di questo documento.** C2 e' implementata, e la dissolvenza per buffer, il vero ronzio, e' stata corretta per decisione dell'operatore: i due commit sono sul branch `c2/iq-samplerate-config`, in PR verso `plan/deskhpsdr-client`. La tabella di stato, la correzione datata sul clic e i passi successivi qui sotto descrivono il momento precedente. Lo stato corrente sta in testa alle sezioni C2 e rinviati del piano. Nota sui numeri: sul fork la #12 e' la PR di C1, mentre `n9bc/thetis-on-the-web#12` e `n9bc/thetis-on-the-web#9` sono issue a monte.
+
 **Sostituisce `docs/handoffs/2026-09-12-totw-handoff.md`**, che resta in archivio ma e' superato su un punto sostanziale: diceva nessuna riga di codice scritta, e non e' piu' vero. Se entrambi compaiono in una ricerca, questo e' il piu' recente.
 
 Riguarda solo il client. Il lavoro sul server deskHPSDR ha un handoff proprio nel suo repository e non va mescolato con questo.
@@ -47,7 +49,7 @@ Attenzione a non ripetere l'errore che quella condizione conteneva: **`IQ.fftRea
 
 La domanda su `vfoA: null` e' chiusa, non era una issue.
 
-**Correzione del 2026-09-12, piu' tarda del resto di questo documento.** Dove sopra si leggeva che restava da raccogliere il clic all'ascolto: non resta niente, ed e' stato chiuso per misura invece che per ascolto. Il clic non dipende dall'offset del payload, cioe' da cio' che C1 corregge: lo produce la dissolvenza di 64 campioni che `playFloat32Stereo` applica ai bordi di ogni buffer, che attenua un quarto del buffer 93,75 volte al secondo, cioe' alla cadenza dei buffer. Replicando la funzione, la riga di modulazione resta identica con e senza la correzione di C1 e scompare solo togliendo la dissolvenza. Ne seguono tre cose: **C1 non elimina il ronzio** e il corpo della PR #12 afferma il contrario, quindi e' sbagliato; l'attribuzione della issue #12 a monte all'header e' da considerare non dimostrata; e la dissolvenza e' un difetto noto che nessuna unita' tocca, registrato fra i rinviati nel piano. Il ragionamento per esteso sta in `docs/solutions/best-practices/falsifiable-acceptance-criteria-in-plans.md`.
+**Correzione del 2026-09-12, piu' tarda del resto di questo documento.** Dove sopra si leggeva che restava da raccogliere il clic all'ascolto: non resta niente, ed e' stato chiuso per misura invece che per ascolto. Il clic non dipende dall'offset del payload, cioe' da cio' che C1 corregge: lo produce la dissolvenza di 64 campioni che `playFloat32Stereo` applica ai bordi di ogni buffer, che attenua un quarto del buffer 93,75 volte al secondo, cioe' alla cadenza dei buffer. Replicando la funzione, la riga di modulazione resta identica con e senza la correzione di C1 e scompare solo togliendo la dissolvenza. Ne seguono tre cose: **C1 non elimina il ronzio** e il corpo della PR #12 afferma il contrario, quindi e' sbagliato; l'attribuzione all'header della issue `n9bc/thetis-on-the-web#12` e' da considerare non dimostrata; e la dissolvenza e' un difetto noto che nessuna unita' tocca, registrato fra i rinviati nel piano. Il ragionamento per esteso sta in `docs/solutions/best-practices/falsifiable-acceptance-criteria-in-plans.md`.
 
 ## Decisioni, e di chi sono
 
