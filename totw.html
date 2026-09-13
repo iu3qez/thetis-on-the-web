@@ -3306,7 +3306,7 @@ html[data-touch] #mobileDrawer { display: block; }
   <div class="spacer"></div>
   <span class="utc-clock" id="utcClock">00:00:00 UTC</span>
 
-  <input type="text" class="conn-input" id="hostInput" value="ws://127.0.0.1:50001" />
+  <input type="text" class="conn-input" id="hostInput" value="ws://127.0.0.1:40001" />
   <button class="btn-connect" id="connBtn" onclick="toggleConn()">CONNECT</button>
 
   <!-- Settings gear -->
@@ -3735,6 +3735,15 @@ html[data-touch] #mobileDrawer { display: block; }
       <label>Auto-connect on startup</label>
       <input type="checkbox" id="cfgAutoConn">
     </div>
+    <div class="modal-row" title="Sent on connect and whenever IQ starts. It changes the radio's sample rate, unless another client is already receiving IQ: then the server keeps its current rate and the log says so.">
+      <label>IQ sample rate (next connect or IQ restart)</label>
+      <select id="cfgIqSampleRate" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:4px;padding:3px 6px;font-family:'SF Mono',monospace;font-size:11px;">
+        <option value="48000">48 kHz · ~3 Mbit/s</option>
+        <option value="96000">96 kHz · ~6 Mbit/s</option>
+        <option value="192000">192 kHz · ~12 Mbit/s</option>
+        <option value="384000">384 kHz · ~25 Mbit/s</option>
+      </select>
+    </div>
     <div class="modal-row">
       <label>Show digital mode markers on panadapter</label>
       <input type="checkbox" id="cfgDigMarkers" checked>
@@ -4058,6 +4067,18 @@ html[data-touch] #mobileDrawer { display: block; }
 
 <!-- ════════════════════ JS ════════════════════ -->
 <script>
+// ── IQ SAMPLE RATE ──
+// The rates the deskHPSDR TCI server accepts; it ignores any other value.
+// Every iq_samplerate sent reconfigures the radio unless another client is
+// already receiving IQ, in which case the server keeps the rate it streams.
+const IQ_SAMPLE_RATES = [48000, 96000, 192000, 384000];
+const IQ_DEFAULT_SR = 48000;
+
+function iqRequestedRate() {
+  const sr = parseInt(getSettings().iqSampleRate);
+  return IQ_SAMPLE_RATES.includes(sr) ? sr : IQ_DEFAULT_SR;
+}
+
 // ── STATE ──
 const S = {
   ws: null, connected: false,
@@ -4066,7 +4087,7 @@ const S = {
   step: 500, _pttWatchdog: null,
   audioCtx: null, rxOn: false, txMicOn: false, micStream: null, micCtx: null, micStreaming: false, txAnalyser: null,
   // IQ panadapter
-  iqOn: false, iqSR: 192000, iqCentre: 14225000,
+  iqOn: false, iqSR: IQ_DEFAULT_SR, iqCentre: 14225000, iqRequestedSR: 0,
 };
 
 // noise / toggle states
@@ -4151,10 +4172,13 @@ function connect() {
       // Start IQ panadapter stream
       setTimeout(() => {
         if (S.ws && S.ws.readyState === 1) {
-          S.ws.send('iq_samplerate:192000;'); netTx(22);
+          const sr = iqRequestedRate();
+          const cmd = 'iq_samplerate:' + sr + ';';
+          S.iqRequestedSR = sr;
+          S.ws.send(cmd); netTx(cmd.length);
           S.ws.send('iq_start:0;'); netTx(12);
           S.iqOn = true;
-          log('sys', 'IQ panadapter stream started (192 kHz)');
+          log('sys', 'IQ panadapter stream started, requested ' + (sr / 1000) + ' kHz');
         }
       }, 500);
 
@@ -4261,7 +4285,13 @@ function parseTCI(msg) {
       }
       break;
     case 'iq_samplerate':
-      S.iqSR = parseInt(args[0]) || 192000;
+      S.iqSR = parseInt(args[0]) || IQ_DEFAULT_SR;
+      // The server owns the stream rate: while another client receives IQ it
+      // answers a request with the rate already streaming, without an error.
+      if (S.iqRequestedSR && S.iqSR !== S.iqRequestedSR) {
+        log('sys', 'IQ sample rate: requested ' + (S.iqRequestedSR / 1000) + ' kHz, server serves ' + (S.iqSR / 1000) + ' kHz');
+      }
+      S.iqRequestedSR = 0;
       break;
     case 'modulation':
       if (args.length >= 2 && args[0] === '0') {
@@ -5288,7 +5318,7 @@ function stopSmeterPoll() {
 function smeterFromIQ() {
   if (!IQ.fftReady) return;
   const N = IQ.FFT_SIZE;
-  const SR = S.iqSR || 192000;
+  const SR = S.iqSR || IQ_DEFAULT_SR;
   const loHz = S.iqCentre - SR / 2;
 
   // Get filter passband in absolute Hz
@@ -6005,7 +6035,8 @@ function runIQFFT() {
 // Start/stop IQ from UI
 function startIQ() {
   if (S.iqOn) return;
-  send('iq_samplerate:192000;');
+  S.iqRequestedSR = iqRequestedRate();
+  send('iq_samplerate:' + S.iqRequestedSR + ';');
   send('iq_start:0;');
   S.iqOn = true;
 }
@@ -6087,7 +6118,7 @@ function attachSpectrumHoverReadout() {
     if (!S.iqOn || !IQ.fftReady) { box.style.display = 'none'; return; }
     const rect = cv.getBoundingClientRect();
     const xFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const SR = S.iqSR || 192000;
+    const SR = S.iqSR || IQ_DEFAULT_SR;
     const vSR = SR / specZoom;
     const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
     const hz = vLo + xFrac * vSR;
@@ -6152,7 +6183,7 @@ function drawSpec() {
   if (useIQ) {
     // ═══ IQ PANADAPTER MODE ═══
     const N = IQ.FFT_SIZE;
-    const SR = S.iqSR || 192000;
+    const SR = S.iqSR || IQ_DEFAULT_SR;
     const centreHz = S.iqCentre;
     const loHz = centreHz - SR / 2;
     const hiHz = centreHz + SR / 2;
@@ -6451,7 +6482,7 @@ function drawWF() {
 
   // VFO marker lines on waterfall
   if (useIQ) {
-    const SR = S.iqSR || 192000;
+    const SR = S.iqSR || IQ_DEFAULT_SR;
     const loHz = S.iqCentre - SR / 2;
     const hzToX = (hz) => ((hz - loHz) / SR) * W;
 
@@ -6932,7 +6963,7 @@ function drawDXOverlay(ctx, W, H, hzToX) {
       if (!dxEnabled || !dxSpots.length || !S.iqOn) { if (tooltip) tooltip.style.display = 'none'; return; }
       const rect = cv.getBoundingClientRect();
       const xFrac = (e.clientX - rect.left) / rect.width;
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const vSR = SR / specZoom;
       const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
       const hoverHz = vLo + xFrac * vSR;
@@ -7302,6 +7333,7 @@ function loadSettingsUI() {
   v('cfgGrid', cfg.grid || '');
   v('cfgName', cfg.opname || '');
   c('cfgAutoConn', cfg.autoConn || false);
+  v('cfgIqSampleRate', cfg.iqSampleRate || IQ_DEFAULT_SR);
   c('cfgDigMarkers', cfg.digMarkers !== false);
   v('cfgPttMode', cfg.pttMode || 'momentary');
   v('cfgPttTimeout', cfg.pttTimeout || 3);
@@ -7342,6 +7374,7 @@ function saveSettings() {
     grid:               gv('cfgGrid').toUpperCase().trim(),
     opname:             gv('cfgName').trim(),
     autoConn:           gc('cfgAutoConn'),
+    iqSampleRate:       parseInt(gv('cfgIqSampleRate')) || IQ_DEFAULT_SR,
     digMarkers:         gc('cfgDigMarkers'),
     pttMode:            gv('cfgPttMode'),
     pttTimeout:         parseInt(gv('cfgPttTimeout')) || 3,
@@ -7382,7 +7415,7 @@ function saveSettings() {
   log('sys', 'Settings saved' + (cfg.callsign ? ' · ' + cfg.callsign : ''));
 }
 
-const SETTINGS_SCHEMA_VERSION = 2;
+const SETTINGS_SCHEMA_VERSION = 3;
 function migrateSettings(cfg) {
   cfg = (cfg && typeof cfg === 'object' && !Array.isArray(cfg)) ? cfg : {};
   if (!cfg.schemaVersion) cfg.schemaVersion = 1;
@@ -7390,6 +7423,10 @@ function migrateSettings(cfg) {
     if (cfg.dxMaxAge == null) cfg.dxMaxAge = 30;
     if (cfg.digMarkers == null) cfg.digMarkers = true;
     cfg.schemaVersion = 2;
+  }
+  if (cfg.schemaVersion < 3) {
+    if (cfg.iqSampleRate == null) cfg.iqSampleRate = IQ_DEFAULT_SR;
+    cfg.schemaVersion = 3;
   }
   return cfg;
 }
@@ -7897,7 +7934,7 @@ window.addEventListener('load', () => {
     function visRangeAtClientX(clientX) {
       const rect = cv.getBoundingClientRect();
       const xFrac = (clientX - rect.left) / rect.width;
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const vSR = SR / specZoom;
       const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
       return vLo + xFrac * vSR;
@@ -7932,7 +7969,7 @@ window.addEventListener('load', () => {
       const dx = e.clientX - dragStartX;
       if (Math.abs(dx) > 3) dragMoved = true;
       if (!dragMoved) return;
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const hzPerPx = (SR / specZoom) / rect.width;
       bpDragHzOffset = Math.round(dx * hzPerPx);
       const previewHz = snapToStep(S.vfoA + bpDragHzOffset, S.step);
@@ -8059,7 +8096,7 @@ window.addEventListener('load', () => {
         previewVfoDisp('A', Math.max(0, snapToStep(S.vfoA + bpDragHzOffset, S.step)));
       } else {
         // Horizontal drag = continuous tune
-        const SR = S.iqSR || 192000;
+        const SR = S.iqSR || IQ_DEFAULT_SR;
         const hzPerPx = (SR / specZoom) / cv.getBoundingClientRect().width;
         bpDragHzOffset = Math.round(dx * hzPerPx);
         previewVfoDisp('A', Math.max(0, snapToStep(S.vfoA + bpDragHzOffset, S.step)));
@@ -8098,7 +8135,7 @@ window.addEventListener('load', () => {
     if (!S.iqOn || !IQ.fftReady) return;
     const rect = this.getBoundingClientRect();
     const xFrac = (e.clientX - rect.left) / rect.width;
-    const SR = S.iqSR || 192000;
+    const SR = S.iqSR || IQ_DEFAULT_SR;
     const hz = Math.round(S.iqCentre - SR / 2 + xFrac * SR);
     if (hz > 0) { S.vfoA = hz; setVfoDisp('A', hz); send('vfo:0,0,' + hz + ';'); bpIgnoreVfoUpdateUntil = Date.now() + 1000; }
   });
@@ -8112,7 +8149,7 @@ window.addEventListener('load', () => {
       // Ctrl+wheel = zoom in/out centred on cursor
       const rect = this.getBoundingClientRect();
       const xFrac = (e.clientX - rect.left) / rect.width;
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const vSR = SR / specZoom;
       const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
       const mouseHz = vLo + xFrac * vSR;
@@ -8149,7 +8186,7 @@ window.addEventListener('load', () => {
       }
 
       // Recenter IQ when VFO drifts within 25% of an edge — keeps IQ data fresh
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const margin = SR * 0.25;
       if (newVfo < S.iqCentre - SR / 2 + margin || newVfo > S.iqCentre + SR / 2 - margin) {
         S.iqCentre = newVfo;
@@ -8176,7 +8213,7 @@ window.addEventListener('load', () => {
 
   log('sys','Thetis On The Web — ready');
   log('sys','Press ? for keyboard shortcuts');
-  log('sys','Enter ws://[pc-ip]:50001 above, then click CONNECT');
+  log('sys','Enter ws://[pc-ip]:40001 above for deskHPSDR, or port 50001 for Thetis, then click CONNECT');
 });
 
 // ── DOCK PANEL SNAP SYSTEM ──
