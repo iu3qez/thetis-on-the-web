@@ -3306,7 +3306,7 @@ html[data-touch] #mobileDrawer { display: block; }
   <div class="spacer"></div>
   <span class="utc-clock" id="utcClock">00:00:00 UTC</span>
 
-  <input type="text" class="conn-input" id="hostInput" value="ws://127.0.0.1:50001" />
+  <input type="text" class="conn-input" id="hostInput" value="ws://127.0.0.1:40001" />
   <button class="btn-connect" id="connBtn" onclick="toggleConn()">CONNECT</button>
 
   <!-- Settings gear -->
@@ -3735,6 +3735,15 @@ html[data-touch] #mobileDrawer { display: block; }
       <label>Auto-connect on startup</label>
       <input type="checkbox" id="cfgAutoConn">
     </div>
+    <div class="modal-row" title="Sent on connect and whenever IQ starts. It changes the radio's sample rate, unless another client is already receiving IQ: then the server keeps its current rate and the log says so.">
+      <label>IQ sample rate (next connect or IQ restart)</label>
+      <select id="cfgIqSampleRate" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:4px;padding:3px 6px;font-family:'SF Mono',monospace;font-size:11px;">
+        <option value="48000">48 kHz · ~3 Mbit/s</option>
+        <option value="96000">96 kHz · ~6 Mbit/s</option>
+        <option value="192000">192 kHz · ~12 Mbit/s</option>
+        <option value="384000">384 kHz · ~25 Mbit/s</option>
+      </select>
+    </div>
     <div class="modal-row">
       <label>Show digital mode markers on panadapter</label>
       <input type="checkbox" id="cfgDigMarkers" checked>
@@ -4058,6 +4067,18 @@ html[data-touch] #mobileDrawer { display: block; }
 
 <!-- ════════════════════ JS ════════════════════ -->
 <script>
+// ── IQ SAMPLE RATE ──
+// The rates the deskHPSDR TCI server accepts; it ignores any other value.
+// Every iq_samplerate sent reconfigures the radio unless another client is
+// already receiving IQ, in which case the server keeps the rate it streams.
+const IQ_SAMPLE_RATES = [48000, 96000, 192000, 384000];
+const IQ_DEFAULT_SR = 48000;
+
+function iqRequestedRate() {
+  const sr = parseInt(getSettings().iqSampleRate);
+  return IQ_SAMPLE_RATES.includes(sr) ? sr : IQ_DEFAULT_SR;
+}
+
 // ── STATE ──
 const S = {
   ws: null, connected: false,
@@ -4066,7 +4087,7 @@ const S = {
   step: 500, _pttWatchdog: null,
   audioCtx: null, rxOn: false, txMicOn: false, micStream: null, micCtx: null, micStreaming: false, txAnalyser: null,
   // IQ panadapter
-  iqOn: false, iqSR: 192000, iqCentre: 14225000,
+  iqOn: false, iqSR: IQ_DEFAULT_SR, iqCentre: 14225000, iqRequestedSR: 0,
 };
 
 // noise / toggle states
@@ -4151,10 +4172,13 @@ function connect() {
       // Start IQ panadapter stream
       setTimeout(() => {
         if (S.ws && S.ws.readyState === 1) {
-          S.ws.send('iq_samplerate:192000;'); netTx(22);
+          const sr = iqRequestedRate();
+          const cmd = 'iq_samplerate:' + sr + ';';
+          S.iqRequestedSR = sr;
+          S.ws.send(cmd); netTx(cmd.length);
           S.ws.send('iq_start:0;'); netTx(12);
           S.iqOn = true;
-          log('sys', 'IQ panadapter stream started (192 kHz)');
+          log('sys', 'IQ panadapter stream started, requested ' + (sr / 1000) + ' kHz');
         }
       }, 500);
 
@@ -4261,7 +4285,13 @@ function parseTCI(msg) {
       }
       break;
     case 'iq_samplerate':
-      S.iqSR = parseInt(args[0]) || 192000;
+      S.iqSR = parseInt(args[0]) || IQ_DEFAULT_SR;
+      // The server owns the stream rate: while another client receives IQ it
+      // answers a request with the rate already streaming, without an error.
+      if (S.iqRequestedSR && S.iqSR !== S.iqRequestedSR) {
+        log('sys', 'IQ sample rate: requested ' + (S.iqRequestedSR / 1000) + ' kHz, server serves ' + (S.iqSR / 1000) + ' kHz');
+      }
+      S.iqRequestedSR = 0;
       break;
     case 'modulation':
       if (args.length >= 2 && args[0] === '0') {
@@ -4753,6 +4783,7 @@ const audioDiag = {
   audioFrames: 0,       // frames with streamType=1
   unknownTypes: {},     // any other stream types seen
   shortFrames: 0,       // frames too short to parse
+  gaps: 0,              // playback discontinuities smoothed with ramps
   discardedFrames: 0,   // frames dropped because the stream type is unknown
   spectrumFrames: 0,    // type=4 bin spectrum frames, consumed by C3
   played: 0,            // successfully scheduled for playback
@@ -4763,6 +4794,11 @@ const audioDiag = {
 
 // Scheduled playback time for gapless audio
 let rxNextTime = 0;
+// Ramps are applied only where the stream is actually broken, see schedulePlayback.
+const RX_FADE_S    = 64 / 48000;   // ramp length at a discontinuity
+const RX_QUANTUM_S = 128 / 48000;  // one Web Audio render quantum, used as scheduling margin
+let rxLastGain   = null;           // gain node of the last scheduled buffer
+let rxLastFadeAt = 0;              // when that buffer's provisional fade-out begins
 
 async function startRx() {
   try {
@@ -4793,11 +4829,12 @@ async function startRx() {
     }
 
     rxNextTime = S.audioCtx.currentTime + 0.05;
+    rxLastGain = null; rxLastFadeAt = 0;
     S.rxOn = true;
     el('rxAuC').classList.add('on');
 
     // Reset diagnostic counters
-    Object.assign(audioDiag, {binaryFrames:0,audioFrames:0,unknownTypes:{},shortFrames:0,discardedFrames:0,spectrumFrames:0,played:0,lastType:null,lastSize:null,lastSampleCount:null});
+    Object.assign(audioDiag, {binaryFrames:0,audioFrames:0,unknownTypes:{},shortFrames:0,gaps:0,discardedFrames:0,spectrumFrames:0,played:0,lastType:null,lastSize:null,lastSampleCount:null});
 
     // Send all audio init in ONE WebSocket frame to guarantee order.
     // Thetis needs audio_start first, audio_samplerate last to trigger streaming.
@@ -4830,6 +4867,7 @@ async function startRx() {
       log('sys', 'Stream type=1 (RX audio) frames: ' + audioDiag.audioFrames);
       log('sys', 'Frames played to AudioContext: ' + audioDiag.played);
       log('sys', 'Frames too short: ' + audioDiag.shortFrames);
+      log('sys', 'Playback discontinuities smoothed: ' + audioDiag.gaps);
       log('sys', 'Frames discarded (unknown stream type): ' + audioDiag.discardedFrames);
       if (audioDiag.spectrumFrames) log('sys', 'Bin spectrum frames seen (await C3): ' + audioDiag.spectrumFrames);
       log('sys', 'AudioContext state now: ' + (S.audioCtx ? S.audioCtx.state : 'null'));
@@ -4864,6 +4902,7 @@ function stopRx() {
   if (S.connected) send('audio_stop:0;');
   if (S.audioCtx) { S.audioCtx.close(); S.audioCtx = null; S.analyser = null; }
   rxNextTime = 0;
+  rxLastGain = null; rxLastFadeAt = 0;
 }
 
 // ── Binary frame dispatch ──
@@ -4974,28 +5013,57 @@ function playFloat32Stereo(buf, offset, sampleCount) {
   const L = ab.getChannelData(0);
   const R = ab.getChannelData(1);
 
-  // Fade length: 64 samples (~1.3ms at 48kHz) — enough to kill clicks, short enough to be inaudible
-  const FADE = Math.min(64, frames >> 2);
-
+  // Samples are copied unmodified. Consecutive buffers are consecutive pieces
+  // of one continuous stream, so there is no edge to soften between them: a
+  // fade on every buffer amplitude-modulates the stream at the buffer rate.
   for (let i = 0; i < frames; i++) {
-    let s = 1.0;
-    if (i < FADE)             s = i / FADE;           // fade in
-    else if (i >= frames - FADE) s = (frames - i) / FADE; // fade out
-    L[i] = floats[i * 2]     * s;
-    R[i] = floats[i * 2 + 1] * s;
+    L[i] = floats[i * 2];
+    R[i] = floats[i * 2 + 1];
   }
   schedulePlayback(ab);
 }
 
 // ── Schedule a buffer for gapless playback ──
+// Each buffer plays through its own gain node and carries a provisional
+// fade-out on its last samples. When the next buffer arrives in time that
+// fade-out is cancelled, so contiguous buffers join at unity gain. When it
+// arrives late, the fade-out stays and the new buffer fades in: ramps exist
+// only at real discontinuities, and on both sides of them.
 function schedulePlayback(ab) {
-  const now = S.audioCtx.currentTime;
+  const ctx = S.audioCtx;
+  const now = ctx.currentTime;
+  const fade = Math.min(RX_FADE_S, ab.duration / 4);
+  // Late: the previous fade-out can no longer be cancelled cleanly, because the
+  // scheduler fell behind or the ramp is about to start within one quantum.
+  const late = rxLastGain === null || now > rxLastFadeAt - RX_QUANTUM_S;
   if (rxNextTime < now) rxNextTime = now + 0.02;
-  const src = S.audioCtx.createBufferSource();
+
+  const src = ctx.createBufferSource();
   src.buffer = ab;
-  src.connect(S.analyser || S.audioCtx.destination);
-  src.start(rxNextTime);
-  rxNextTime += ab.duration;
+  const g = ctx.createGain();
+  src.connect(g);
+  g.connect(S.analyser || ctx.destination);
+  src.onended = () => { src.disconnect(); g.disconnect(); };
+
+  const t0 = rxNextTime, t1 = t0 + ab.duration;
+  if (late) {
+    if (rxLastGain !== null) audioDiag.gaps++;
+    // Silent from creation, not just from t0: the source start and the gain
+    // event round t0 to a sample frame differently, and for one frame the
+    // default gain of 1 would otherwise let the first sample through at full level.
+    g.gain.value = 0;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(1, t0 + fade);
+  } else {
+    rxLastGain.gain.cancelScheduledValues(rxLastFadeAt);
+  }
+  g.gain.setValueAtTime(1, t1 - fade);
+  g.gain.linearRampToValueAtTime(0, t1);
+
+  src.start(t0);
+  rxLastGain = g;
+  rxLastFadeAt = t1 - fade;
+  rxNextTime = t1;
   audioDiag.played++;
   drawAuMeter(ab.getChannelData(0));
 }
@@ -5288,7 +5356,7 @@ function stopSmeterPoll() {
 function smeterFromIQ() {
   if (!IQ.fftReady) return;
   const N = IQ.FFT_SIZE;
-  const SR = S.iqSR || 192000;
+  const SR = S.iqSR || IQ_DEFAULT_SR;
   const loHz = S.iqCentre - SR / 2;
 
   // Get filter passband in absolute Hz
@@ -6005,7 +6073,8 @@ function runIQFFT() {
 // Start/stop IQ from UI
 function startIQ() {
   if (S.iqOn) return;
-  send('iq_samplerate:192000;');
+  S.iqRequestedSR = iqRequestedRate();
+  send('iq_samplerate:' + S.iqRequestedSR + ';');
   send('iq_start:0;');
   S.iqOn = true;
 }
@@ -6087,7 +6156,7 @@ function attachSpectrumHoverReadout() {
     if (!S.iqOn || !IQ.fftReady) { box.style.display = 'none'; return; }
     const rect = cv.getBoundingClientRect();
     const xFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const SR = S.iqSR || 192000;
+    const SR = S.iqSR || IQ_DEFAULT_SR;
     const vSR = SR / specZoom;
     const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
     const hz = vLo + xFrac * vSR;
@@ -6152,7 +6221,7 @@ function drawSpec() {
   if (useIQ) {
     // ═══ IQ PANADAPTER MODE ═══
     const N = IQ.FFT_SIZE;
-    const SR = S.iqSR || 192000;
+    const SR = S.iqSR || IQ_DEFAULT_SR;
     const centreHz = S.iqCentre;
     const loHz = centreHz - SR / 2;
     const hiHz = centreHz + SR / 2;
@@ -6451,7 +6520,7 @@ function drawWF() {
 
   // VFO marker lines on waterfall
   if (useIQ) {
-    const SR = S.iqSR || 192000;
+    const SR = S.iqSR || IQ_DEFAULT_SR;
     const loHz = S.iqCentre - SR / 2;
     const hzToX = (hz) => ((hz - loHz) / SR) * W;
 
@@ -6932,7 +7001,7 @@ function drawDXOverlay(ctx, W, H, hzToX) {
       if (!dxEnabled || !dxSpots.length || !S.iqOn) { if (tooltip) tooltip.style.display = 'none'; return; }
       const rect = cv.getBoundingClientRect();
       const xFrac = (e.clientX - rect.left) / rect.width;
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const vSR = SR / specZoom;
       const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
       const hoverHz = vLo + xFrac * vSR;
@@ -7302,6 +7371,7 @@ function loadSettingsUI() {
   v('cfgGrid', cfg.grid || '');
   v('cfgName', cfg.opname || '');
   c('cfgAutoConn', cfg.autoConn || false);
+  v('cfgIqSampleRate', cfg.iqSampleRate || IQ_DEFAULT_SR);
   c('cfgDigMarkers', cfg.digMarkers !== false);
   v('cfgPttMode', cfg.pttMode || 'momentary');
   v('cfgPttTimeout', cfg.pttTimeout || 3);
@@ -7342,6 +7412,7 @@ function saveSettings() {
     grid:               gv('cfgGrid').toUpperCase().trim(),
     opname:             gv('cfgName').trim(),
     autoConn:           gc('cfgAutoConn'),
+    iqSampleRate:       parseInt(gv('cfgIqSampleRate')) || IQ_DEFAULT_SR,
     digMarkers:         gc('cfgDigMarkers'),
     pttMode:            gv('cfgPttMode'),
     pttTimeout:         parseInt(gv('cfgPttTimeout')) || 3,
@@ -7382,7 +7453,7 @@ function saveSettings() {
   log('sys', 'Settings saved' + (cfg.callsign ? ' · ' + cfg.callsign : ''));
 }
 
-const SETTINGS_SCHEMA_VERSION = 2;
+const SETTINGS_SCHEMA_VERSION = 3;
 function migrateSettings(cfg) {
   cfg = (cfg && typeof cfg === 'object' && !Array.isArray(cfg)) ? cfg : {};
   if (!cfg.schemaVersion) cfg.schemaVersion = 1;
@@ -7390,6 +7461,10 @@ function migrateSettings(cfg) {
     if (cfg.dxMaxAge == null) cfg.dxMaxAge = 30;
     if (cfg.digMarkers == null) cfg.digMarkers = true;
     cfg.schemaVersion = 2;
+  }
+  if (cfg.schemaVersion < 3) {
+    if (cfg.iqSampleRate == null) cfg.iqSampleRate = IQ_DEFAULT_SR;
+    cfg.schemaVersion = 3;
   }
   return cfg;
 }
@@ -7897,7 +7972,7 @@ window.addEventListener('load', () => {
     function visRangeAtClientX(clientX) {
       const rect = cv.getBoundingClientRect();
       const xFrac = (clientX - rect.left) / rect.width;
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const vSR = SR / specZoom;
       const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
       return vLo + xFrac * vSR;
@@ -7932,7 +8007,7 @@ window.addEventListener('load', () => {
       const dx = e.clientX - dragStartX;
       if (Math.abs(dx) > 3) dragMoved = true;
       if (!dragMoved) return;
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const hzPerPx = (SR / specZoom) / rect.width;
       bpDragHzOffset = Math.round(dx * hzPerPx);
       const previewHz = snapToStep(S.vfoA + bpDragHzOffset, S.step);
@@ -8059,7 +8134,7 @@ window.addEventListener('load', () => {
         previewVfoDisp('A', Math.max(0, snapToStep(S.vfoA + bpDragHzOffset, S.step)));
       } else {
         // Horizontal drag = continuous tune
-        const SR = S.iqSR || 192000;
+        const SR = S.iqSR || IQ_DEFAULT_SR;
         const hzPerPx = (SR / specZoom) / cv.getBoundingClientRect().width;
         bpDragHzOffset = Math.round(dx * hzPerPx);
         previewVfoDisp('A', Math.max(0, snapToStep(S.vfoA + bpDragHzOffset, S.step)));
@@ -8098,7 +8173,7 @@ window.addEventListener('load', () => {
     if (!S.iqOn || !IQ.fftReady) return;
     const rect = this.getBoundingClientRect();
     const xFrac = (e.clientX - rect.left) / rect.width;
-    const SR = S.iqSR || 192000;
+    const SR = S.iqSR || IQ_DEFAULT_SR;
     const hz = Math.round(S.iqCentre - SR / 2 + xFrac * SR);
     if (hz > 0) { S.vfoA = hz; setVfoDisp('A', hz); send('vfo:0,0,' + hz + ';'); bpIgnoreVfoUpdateUntil = Date.now() + 1000; }
   });
@@ -8112,7 +8187,7 @@ window.addEventListener('load', () => {
       // Ctrl+wheel = zoom in/out centred on cursor
       const rect = this.getBoundingClientRect();
       const xFrac = (e.clientX - rect.left) / rect.width;
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const vSR = SR / specZoom;
       const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
       const mouseHz = vLo + xFrac * vSR;
@@ -8149,7 +8224,7 @@ window.addEventListener('load', () => {
       }
 
       // Recenter IQ when VFO drifts within 25% of an edge — keeps IQ data fresh
-      const SR = S.iqSR || 192000;
+      const SR = S.iqSR || IQ_DEFAULT_SR;
       const margin = SR * 0.25;
       if (newVfo < S.iqCentre - SR / 2 + margin || newVfo > S.iqCentre + SR / 2 - margin) {
         S.iqCentre = newVfo;
@@ -8176,7 +8251,7 @@ window.addEventListener('load', () => {
 
   log('sys','Thetis On The Web — ready');
   log('sys','Press ? for keyboard shortcuts');
-  log('sys','Enter ws://[pc-ip]:50001 above, then click CONNECT');
+  log('sys','Enter ws://[pc-ip]:40001 above for deskHPSDR, or port 50001 for Thetis, then click CONNECT');
 });
 
 // ── DOCK PANEL SNAP SYSTEM ──

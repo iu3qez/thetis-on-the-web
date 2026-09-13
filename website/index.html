@@ -36,7 +36,7 @@
   <div class="spacer"></div>
   <span class="utc-clock" id="utcClock">00:00:00 UTC</span>
 
-  <input type="text" class="conn-input" id="hostInput" value="ws://127.0.0.1:50001" />
+  <input type="text" class="conn-input" id="hostInput" value="ws://127.0.0.1:40001" />
   <button class="btn-connect" id="connBtn" onclick="toggleConn()">CONNECT</button>
 
   <!-- Settings gear -->
@@ -464,6 +464,15 @@
     <div class="modal-row">
       <label>Auto-connect on startup</label>
       <input type="checkbox" id="cfgAutoConn">
+    </div>
+    <div class="modal-row" title="Sent on connect and whenever IQ starts. It changes the radio's sample rate, unless another client is already receiving IQ: then the server keeps its current rate and the log says so.">
+      <label>IQ sample rate (next connect or IQ restart)</label>
+      <select id="cfgIqSampleRate" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:4px;padding:3px 6px;font-family:'SF Mono',monospace;font-size:11px;">
+        <option value="48000">48 kHz · ~3 Mbit/s</option>
+        <option value="96000">96 kHz · ~6 Mbit/s</option>
+        <option value="192000">192 kHz · ~12 Mbit/s</option>
+        <option value="384000">384 kHz · ~25 Mbit/s</option>
+      </select>
     </div>
     <div class="modal-row">
       <label>Show digital mode markers on panadapter</label>
