@@ -4237,7 +4237,7 @@ function onMsg(evt) {
 
 // Commands that fire many times/sec — suppress from log to avoid flood
 const _logSilence = new Set([
-  'vfo','if','rx_smeter','s_meter','smeter',
+  'vfo','if','rx_smeter','s_meter','smeter','rx_sensors',
   // Known Thetis startup broadcast messages — informational only, no action needed
   'protocol','device','receive_only','trx_count','channels_count',
   'vfo_limits','if_limits','modulations_list','dds',
@@ -4311,7 +4311,7 @@ function parseTCI(msg) {
       if (args.length >= 2) { S.mox = args[1]==='true'; updTXRX(); }
       break;
     case 'tune':
-      if (args.length >= 2) { S.tune = args[1]==='true'; updTune(); }
+      if (args.length >= 2) { S.tune = args[1]==='true'; updTune(); if (!S.tune) clearTuneWatchdog(); }
       break;
     case 'rx_filter_band':
       if (args.length >= 3 && args[0]==='0') {
@@ -4322,7 +4322,8 @@ function parseTCI(msg) {
 
 
     case 'split_enable':
-      TG.split = args[0]==='true'; el('splitC').classList.toggle('on', TG.split);
+      // deskHPSDR sends split_enable:<trx>,<bool>; the state is the last argument.
+      TG.split = args[args.length - 1]==='true'; el('splitC').classList.toggle('on', TG.split);
       break;
     case 'line_in':
       // Thetis broadcasting line_in state to other clients — just log it
@@ -4339,6 +4340,7 @@ function parseTCI(msg) {
       break;
 
     // S-meter: Thetis sends rx_smeter:receiver,vfo,dBm
+    case 'rx_sensors': // deskHPSDR answers rx_smeter with rx_sensors:<rx>,<dBm>
     case 'rx_smeter':
     case 's_meter':
     case 'smeter':
@@ -4466,6 +4468,8 @@ function updBandButtons(hz) {
 }
 
 function setVfoDisp(vfo, hz) {
+  // Reject before assigning: a NaN stored in S.vfoA poisons every later step-tuning path.
+  if (!Number.isFinite(hz) || hz < 0) { log('err', 'VFO ' + vfo + ': invalid frequency ignored (' + hz + ')'); return; }
   if (vfo==='A') S.vfoA=hz; else S.vfoB=hz;
   const mhz = hz / 1e6;
   const whole = Math.floor(mhz).toString();
@@ -4592,8 +4596,10 @@ const bandDfltMode = {
   '160m':'LSB','80m':'LSB','60m':'USB','40m':'LSB','30m':'USB',
   '20m':'USB','17m':'USB','15m':'USB','12m':'USB','10m':'USB','6m':'USB'
 };
-document.querySelectorAll('.band-btn').forEach(b => b.addEventListener('click', () => {
-  document.querySelectorAll('.band-btn').forEach(x => x.classList.remove('active'));
+// Only real band buttons carry data-freq: the top-bar ⚙, DIAG and ? buttons share the
+// .band-btn class for styling and must not tune the VFO.
+document.querySelectorAll('.band-btn[data-freq]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.band-btn[data-freq]').forEach(x => x.classList.remove('active'));
   b.classList.add('active');
   const hz = parseInt(b.dataset.freq);
   setVfoDisp('A', hz);
@@ -4701,6 +4707,11 @@ function tog(k) {
 }
 
 // ── PTT / TUNE ──
+// TX safety timeout from Settings (cfgPttTimeout, minutes), shared by PTT and TUNE.
+function txTimeoutMinutes() {
+  return Math.max(1, parseInt(getSettings().pttTimeout) || 3);
+}
+
 function setPTT(on) {
   if (S.mox === on) return; // ignore duplicate events
   if (S._pttWatchdog) { clearTimeout(S._pttWatchdog); S._pttWatchdog = null; }
@@ -4708,11 +4719,12 @@ function setPTT(on) {
   updTXRX();
   send('trx:0,' + on + (on ? ',tci' : '') + ';');
   if (on) {
-    // 3-minute auto-release safety watchdog
+    // Auto-release safety watchdog
+    const minutes = txTimeoutMinutes();
     S._pttWatchdog = setTimeout(() => {
-      log('err', '⚠ PTT auto-released — 3 min timeout');
+      log('err', '⚠ PTT auto-released — ' + minutes + ' min timeout');
       setPTT(false);
-    }, 180000);
+    }, minutes * 60000);
     if (!S.txMicOn) {
       // Auto-arm mic on first PTT press
       startTxMic().then(() => { if (S.mox) startMicStream(); });
@@ -4723,7 +4735,23 @@ function setPTT(on) {
     stopMicStream();
   }
 }
-function togTune() { S.tune=!S.tune; updTune(); send('tune:0,'+S.tune+';'); }
+function clearTuneWatchdog() {
+  if (S._tuneWatchdog) { clearTimeout(S._tuneWatchdog); S._tuneWatchdog = null; }
+}
+function togTune() {
+  S.tune=!S.tune; updTune(); send('tune:0,'+S.tune+';');
+  clearTuneWatchdog();
+  if (S.tune) {
+    // TUNE keys a full carrier: release it after the same timeout as PTT
+    const minutes = txTimeoutMinutes();
+    S._tuneWatchdog = setTimeout(() => {
+      S._tuneWatchdog = null;
+      if (!S.tune) return;
+      log('err', '⚠ TUNE auto-released — ' + minutes + ' min timeout');
+      togTune();
+    }, minutes * 60000);
+  }
+}
 
 // ── SLIDERS ──
 function sl(k, v) {
@@ -4733,7 +4761,7 @@ function sl(k, v) {
 
     drive: () => { el('drV').textContent=v+'%';       send('drive:0,'+v+';'); },
 
-    rx2:   () => { el('rx2V').textContent=v;          send('rx_volume:1,'+(v-100)+';'); },
+    rx2:   () => { el('rx2V').textContent=v;          send('rx_volume:1,0,'+(v-100)+';'); },
   };
   if (map[k]) { map[k](); saveState(); }
 }
@@ -7784,7 +7812,8 @@ document.addEventListener('keydown', e => {
 
   if (e.code === 'Space') {
     e.preventDefault();
-    if (pttMode === 'toggle') { if (!e.repeat) setPTT(!S.mox); }
+    if (e.repeat) return; // keyboard autorepeat is not a new PTT request
+    if (pttMode === 'toggle') setPTT(!S.mox);
     else setPTT(true);
     return;
   }
