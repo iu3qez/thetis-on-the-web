@@ -254,6 +254,21 @@ function parseTCI(msg) {
     case 'trx':
       if (args.length >= 2) { S.mox = args[1]==='true'; updTXRX(); }
       break;
+    case 'rx_volume':
+      // rx_volume:<rx>,<channel>,<dB>; deskHPSDR clamps volume to -40..0 dB (tci_clamp_volume),
+      // the same range as the AF sliders. Setting .value fires no input event, so no echo loop.
+      if (args.length >= 3 && args[1] === '0') {
+        const db = Math.round(parseFloat(args[2]));
+        if (Number.isFinite(db)) {
+          if (args[0] === '0') {
+            el('afSlider').value = db; el('afV').textContent = db + ' dB';
+            const ms = el('afSliderMobile'); if (ms) { ms.value = db; el('afVMobile').textContent = db + ' dB'; }
+          } else if (args[0] === '1') {
+            const r2 = el('rx2AfSlider'); if (r2) { r2.value = db; el('rx2V').textContent = db + ' dB'; }
+          }
+        }
+      }
+      break;
     case 'tune':
       if (args.length >= 2) { S.tune = args[1]==='true'; updTune(); if (!S.tune) clearTuneWatchdog(); }
       break;
@@ -711,7 +726,7 @@ function sl(k, v) {
 
     drive: () => { el('drV').textContent=v+'%';       send('drive:0,'+v+';'); },
 
-    rx2:   () => { el('rx2V').textContent=v;          send('rx_volume:1,0,'+(v-100)+';'); },
+    rx2:   () => { el('rx2V').textContent=v+' dB';    send('rx_volume:1,0,'+v+';'); },
   };
   if (map[k]) { map[k](); saveState(); }
 }
@@ -3877,7 +3892,7 @@ function loadState() {
   if (p.filterLo != null) el('flo').value =p.filterLo;
   if (p.filterHi != null) el('fhi').value =p.filterHi;
   const afEl = el('afSlider');
-  if (afEl && p.afGain != null) { afEl.value = p.afGain; el('afV').textContent = p.afGain + ' dB'; }
+  if (afEl && p.afGain != null) { afEl.value = p.afGain; el('afV').textContent = afEl.value + ' dB'; }
   const sgEl = el('specGainSlider');
   if (sgEl && p.specGain != null) { specGain = p.specGain; sgEl.value = p.specGain; el('specGainV').textContent = (p.specGain >= 0 ? '+' : '') + p.specGain + 'dB'; }
   const wsEl = el('wfSpeedSlider');

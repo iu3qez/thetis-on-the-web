@@ -213,7 +213,7 @@
         <div class="ctrl-head" style="display:flex;justify-content:space-between;margin-bottom:4px;">
           <span class="ctrl-lbl">AF GAIN</span><span class="ctrl-val" id="afV">-10 dB</span>
         </div>
-        <input type="range" min="-60" max="0" value="-10" step="1" id="afSlider" oninput="sl('af',this.value)" style="width:100%">
+        <input type="range" min="-40" max="0" value="-10" step="1" id="afSlider" oninput="sl('af',this.value)" style="width:100%">
       </div>
     </div>
 
@@ -400,9 +400,9 @@
       <div class="dock-body">
         <button class="chip" id="rx2C" onclick="togRX2()" style="margin-bottom:6px;">RX2 ON</button>
         <div class="ctrl-head" style="display:flex;justify-content:space-between;margin-bottom:3px;">
-          <span class="ctrl-lbl">RX2 AF</span><span class="ctrl-val" id="rx2V">50</span>
+          <span class="ctrl-lbl">RX2 AF</span><span class="ctrl-val" id="rx2V">-20 dB</span>
         </div>
-        <input type="range" min="0" max="100" value="50" step="1" oninput="sl('rx2',this.value)" style="width:100%">
+        <input type="range" min="-40" max="0" value="-20" step="1" id="rx2AfSlider" oninput="sl('rx2',this.value)" style="width:100%">
       </div>
     </div>
 
@@ -891,7 +891,7 @@
   <span class="mdrw-lbl">AF Gain</span>
   <div class="mdrw-slider-row">
     <span style="font-size:11px;color:#7d8590;font-family:'SF Mono',monospace;">VOL</span>
-    <input type="range" min="-60" max="0" value="-10" step="1" id="afSliderMobile"
+    <input type="range" min="-40" max="0" value="-10" step="1" id="afSliderMobile"
       oninput="sl('af',this.value);el('afSlider').value=this.value;">
     <span id="afVMobile">-10 dB</span>
   </div>
