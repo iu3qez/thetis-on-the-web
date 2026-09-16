@@ -40,3 +40,15 @@ La traccia disegnata e' una sola e non sa da quale delle due arriva; la scelta e
 La proprieta' che distingue una traccia che viene aggiornata da una che e' soltanto disegnata.
 
 Non coincide con la disponibilita' dei dati: una traccia puo' restare visibile indefinitamente mostrando l'ultimo contenuto ricevuto, se il flag che ne autorizza il disegno non viene invalidato dalla stessa condizione che lo produce. Il discriminante affidabile e' un contatore di frame che avanza fra due letture, mai lo stato del disegno.
+
+### Finestra di vista
+L'intervallo di frequenza che il panadapter mostra, definito da centro e span, comune a spettro, waterfall, marker e interazioni col puntatore.
+
+E' distinta dalla banda disponibile, cioe' cio' che la sorgente spettro fornisce: con i campioni IQ lo zoom ritaglia la banda in locale, con i bin lo zoom diventa una richiesta di span al server. Quando due parti del pannello calcolano la propria finestra, si disallineano.
+
+## Perimetro
+
+### Costo zero
+Lo stato di una funzione che resta nel client senza investimento: si sposta com'e', si collega al codice nuovo solo dove non costa lavoro, e altrimenti le si permette di degradare.
+
+Non e' una funzione supportata ne' una funzione rimossa. Una correzione che serve a tenerla viva oltre quel limite e' una decisione dell'operatore, non un dettaglio d'implementazione.
