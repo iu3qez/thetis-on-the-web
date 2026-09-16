@@ -4740,7 +4740,13 @@ function setPTT(on) {
     }, minutes * 60000);
     if (!S.txMicOn) {
       // Auto-arm mic on first PTT press
-      startTxMic().then(() => { if (S.mox) startMicStream(); });
+      startTxMic().then(armed => {
+        if (!S.mox) return;
+        if (armed) { startMicStream(); return; }
+        // Without a microphone the radio would transmit silence: release instead
+        log('err', '⚠ PTT released — TX microphone not available');
+        setPTT(false);
+      });
     } else {
       startMicStream();
     }
@@ -5148,7 +5154,20 @@ function getTxWorkletUrl() {
 // ── TX MIC — device setup (button toggle) ──
 // Grabs the mic device and arms it. Actual streaming starts/stops
 // when Thetis sends line_in:0,true / line_in:0,false (on PTT).
-async function startTxMic() {
+// Arm the TX microphone once. A PTT press that arrives while arming is still in
+// progress waits for it instead of building a second AudioContext: a second call
+// used to replace S.micCtx under the first one, whose worklet then was not found.
+// Resolves true when the microphone is armed.
+function startTxMic() {
+  if (S.txMicOn) return Promise.resolve(true);
+  if (!S._txMicStarting) {
+    S._txMicStarting = armTxMic().finally(() => { S._txMicStarting = null; });
+  }
+  return S._txMicStarting;
+}
+
+async function armTxMic() {
+  let stream = null, ctx = null;
   try {
     const AudioCtxCtor = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtxCtor) throw new Error('This browser does not support the Web Audio API needed for TX audio.');
@@ -5158,32 +5177,31 @@ async function startTxMic() {
     if (!window.AudioWorkletNode) {
       throw new Error('AudioWorklet not supported — use a current Chrome/Edge/Firefox/Safari.');
     }
-    S.micStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: { sampleRate:48000, channelCount:1,
                echoCancellation:false, noiseSuppression:false, autoGainControl:false }
     });
-    S.micCtx = new AudioCtxCtor({ sampleRate: 48000 });
-    if (!S.micCtx.audioWorklet) {
+    ctx = new AudioCtxCtor({ sampleRate: 48000 });
+    if (!ctx.audioWorklet) {
       throw new Error('AudioWorklet not supported by this browser context.');
     }
-    if (S.micCtx.state === 'suspended') {
-      try { await S.micCtx.resume(); } catch(e) {}
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch(e) {}
     }
 
-    // Load the inline worklet module (once per context)
-    await S.micCtx.audioWorklet.addModule(getTxWorkletUrl());
+    // Load the inline worklet module into this context
+    await ctx.audioWorklet.addModule(getTxWorkletUrl());
 
-    const src = S.micCtx.createMediaStreamSource(S.micStream);
+    const src = ctx.createMediaStreamSource(stream);
 
     // TX analyser — feeds spectrum/waterfall during TX
-    S.txAnalyser = S.micCtx.createAnalyser();
-    S.txAnalyser.fftSize = 2048;
-    S.txAnalyser.smoothingTimeConstant = 0.89;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.89;
 
-    const node = new AudioWorkletNode(S.micCtx, 'totw-tx-mic', {
+    const node = new AudioWorkletNode(ctx, 'totw-tx-mic', {
       numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1,
     });
-    S._txWorkletNode = node;
 
     let txFrameCount = 0;
     node.port.onmessage = (e) => {
@@ -5226,22 +5244,30 @@ async function startTxMic() {
       }
     };
 
-    src.connect(S.txAnalyser);
+    src.connect(analyser);
     src.connect(node);
     // No destination connection needed — AudioWorkletNode runs on the audio
     // render thread regardless. We don't want mic playback either.
+    S.micStream = stream;
+    S.micCtx = ctx;
+    S.txAnalyser = analyser;
+    S._txWorkletNode = node;
     S.txMicOn = true;
     S.micStreaming = false; // streaming starts only when Thetis sends line_in:0,true
     el('txMcC').classList.add('on');
     log('sys', 'TX mic armed (AudioWorklet) — press PTT to transmit');
+    return true;
   } catch(e) {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (ctx) { try { ctx.close(); } catch(_) {} }
     const msg = e.name === 'NotAllowedError'
       ? 'Mic access DENIED — open browser site settings and allow microphone, then reload'
       : e.name === 'NotFoundError'
       ? 'No microphone found — check device connections'
       : 'Mic error: ' + e.message;
+    // Logged, not alert(): a modal dialog freezes the page while PTT may be keyed.
     log('err', msg);
-    alert(msg);
+    return false;
   }
 }
 
