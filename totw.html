@@ -4304,14 +4304,11 @@ function parseTCI(msg) {
       break;
     case 'modulation':
       if (args.length >= 2 && args[0] === '0') {
-        S.mode = args[1].toUpperCase();
+        S.mode = modeFromTci(args[1]);
         updMode();
-        // Re-apply active filter edges for the new mode
-        const ab = document.querySelector('#filtG .f-btn.active');
-        if (ab && ab.dataset.bw) {
-          const [lo, hi] = bwToLoHi(parseInt(ab.dataset.bw));
-          el('flo').value =lo; el('fhi').value =hi;
-        }
+        // The server does not broadcast the filter it restores for the new mode
+        // (`iu3qez/deskhpsdr` #19): ask for it now that the change is applied.
+        send('rx_filter_band:0;');
         // Immediately re-filter DX spots if Track Mode is active
         if (dxEnabled && (el('dxTrackMode') || {}).checked) dxApplyFilter();
       }
@@ -4341,6 +4338,10 @@ function parseTCI(msg) {
       if (args.length >= 3 && args[0]==='0') {
         document.getElementById('flo').value = args[1];
         document.getElementById('fhi').value = args[2];
+        // Highlight the width button matching the radio's filter, or none
+        const bw = Math.abs(parseInt(args[2]) - parseInt(args[1]));
+        document.querySelectorAll('#filtG .f-btn').forEach(b =>
+          b.classList.toggle('active', parseInt(b.dataset.bw) === bw));
       }
       break;
 
@@ -4652,16 +4653,24 @@ document.querySelectorAll('.band-btn[data-band]').forEach(b => b.addEventListene
 }));
 
 // ── MODE ──
+// deskHPSDR accepts fm and fmn but not the standard nfm (`iu3qez/deskhpsdr` #20).
+const MODE_TO_TCI = { NFM: 'FM' };
+
+// deskHPSDR reports CWL and CWU both as CW (`iu3qez/deskhpsdr` #17): keep the sideband
+// the client knows, otherwise CWU, which is what the server applies for a plain "cw".
+// FM comes back as FM, which the FM button calls NFM.
+function modeFromTci(name) {
+  const m = name.toUpperCase();
+  if (m === 'CW') return (S.mode === 'CWL' || S.mode === 'CWU') ? S.mode : 'CWU';
+  if (m === 'FM') return 'NFM';
+  return m;
+}
+
 function setMode(m) {
   S.mode = m; updMode();
-  send('modulation:0,'+m+';');
-  // Re-apply active filter with correct lo/hi for the new mode
-  const activeBtn = document.querySelector('#filtG .f-btn.active');
-  if (activeBtn && activeBtn.dataset.bw) {
-    const [lo, hi] = bwToLoHi(parseInt(activeBtn.dataset.bw));
-    el('flo').value =lo; el('fhi').value =hi;
-    send('rx_filter_band:0,' + lo + ',' + hi + ';');
-  }
+  // Only the mode: the server restores the filter stored for the new mode. Sending a
+  // filter here also raced with the queued mode change (`iu3qez/deskhpsdr` #18).
+  send('modulation:0,' + (MODE_TO_TCI[m] || m) + ';');
   saveState();
   updateMobileBar(); // keep mobile bar mode readout current
 }
@@ -4681,8 +4690,8 @@ function bwToLoHi(bw) {
   const half = Math.round(bw / 2);
   if (['USB','DIGU'].includes(m))       return [100, 100 + bw];
   if (['LSB','DIGL'].includes(m))       return [-(100 + bw), -100];
-  if (['CWU'].includes(m))              return [600 - half, 600 + half];
-  if (['CWL'].includes(m))              return [-(600 + half), -(600 - half)];
+  // deskHPSDR centres CW filters on zero and applies the CW pitch itself
+  if (['CWU','CWL'].includes(m))        return [-half, half];
   if (['AM','SAM','DSB','NFM','FM'].includes(m)) return [-half, half];
   // Default: treat as USB
   return [100, 100 + bw];
