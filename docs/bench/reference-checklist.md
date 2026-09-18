@@ -62,6 +62,7 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | E1 | Selezionare LSB, USB, CWL, CWU, AM | Modo cambiato anche in GUI | |
 | E2 | Selezionare tre larghezze di filtro | Filtro cambiato anche in GUI | |
 | E3 | Impostare LO e HI a mano, SET | Filtro personalizzato applicato | |
+| E4 | Dalla GUI di deskHPSDR: CWL, CWU, FM, LSB | Il pulsante di modo di TOTW segue, CWL e CWU distinti | |
 
 ## F. Controlli RX
 
@@ -75,6 +76,8 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | F6 | Slider CAL dell'S-meter | Lettura spostata dell'offset | Assente: slider CAL rimosso il 2026-09-18, non agiva piu' su nessuna lettura |
 | F7 | Split acceso e spento dalla GUI di deskHPSDR | Il pulsante SPLIT di TOTW segue | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
 | F8 | SPLIT da TOTW | Split segue in GUI | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
+| F9 | RX2 ON da TOTW, acceso e spento | RX2 acceso e spento in GUI; il pulsante cambia solo dopo la risposta della radio | |
+| F10 | RX2 acceso e spento dalla GUI di deskHPSDR | Il pulsante RX2 ON di TOTW segue | |
 
 ## J. Trasmissione, su carico fittizio
 
