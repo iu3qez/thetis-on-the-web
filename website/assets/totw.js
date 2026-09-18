@@ -430,9 +430,10 @@ function setVfoDisp(vfo, hz) {
   // Reject before assigning: a NaN stored in S.vfoA poisons every later step-tuning path.
   if (!Number.isFinite(hz) || hz < 0) { log('err', 'VFO ' + vfo + ': invalid frequency ignored (' + hz + ')'); return; }
   if (vfo==='A') S.vfoA=hz; else S.vfoB=hz;
-  const mhz = hz / 1e6;
-  const whole = Math.floor(mhz).toString();
-  const dec = mhz.toFixed(4).split('.')[1]; // 4 decimal digits
+  // Digits come from the integer Hz, truncated below 100 Hz like a radio readout.
+  // Rounding the decimals while flooring the MHz showed 7 999 960 Hz as "7.0000".
+  const whole = Math.floor(hz / 1e6).toString();
+  const dec = String(Math.floor((hz % 1e6) / 100)).padStart(4, '0'); // 4 decimal digits
   const disp = el('vfo' + vfo + 'Disp');
 
   // Build digit spans: each digit gets a data-hz attribute for its positional value
@@ -452,7 +453,8 @@ function setVfoDisp(vfo, hz) {
   html += '.';
   // Decimal digits
   for (let i = 0; i < 4; i++) {
-    html += '<span class="vfo-digit" data-hz="' + decValues[i] + '" data-vfo="' + vfo + '">' + dec[i] + '</span>';
+    const cls = decValues[i] === 100 ? 'vfo-digit sub-khz' : 'vfo-digit';
+    html += '<span class="' + cls + '" data-hz="' + decValues[i] + '" data-vfo="' + vfo + '">' + dec[i] + '</span>';
   }
   html += '<span class="mhz"> MHz</span>';
   disp.innerHTML = html;

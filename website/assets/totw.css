@@ -103,6 +103,8 @@ body {
   border-radius: 2px;
   transition: background 0.1s, color 0.1s;
 }
+/* Gap between the kHz digit and the 100 Hz digit: 7.123 4 reads as 7123.4 kHz at a glance */
+.vfo-freq .vfo-digit.sub-khz { margin-left: 0.3em; }
 .vfo-freq .vfo-digit:hover { background: #388bfd33; color: #79c0ff; }
 .vfo-freq.secondary .vfo-digit:hover { background: #30363d; color: #e6edf3; }
 .vfo-freq.secondary { font-size: 20px; color: #7d8590; }
