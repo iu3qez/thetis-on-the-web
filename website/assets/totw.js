@@ -16,6 +16,7 @@ const S = {
   vfoA: 14225000, vfoB: 14196000,
   txFreq: 0,  // tx_frequency from deskHPSDR: the TX VFO's frequency, without XIT
   mode: 'USB', mox: false, tune: false,
+  modeB: '',  // VFO B's mode, from modulation:1 and modulation_ex:1; empty until the server tells it
   step: 500, _pttWatchdog: null,
   audioCtx: null, rxOn: false, txMicOn: false, micStream: null, micCtx: null, micStreaming: false, txAnalyser: null,
   // IQ panadapter
@@ -120,7 +121,10 @@ function connect() {
       log('sys', 'Connected — Thetis TCI online');
       // modulation reports CWL and CWU both as CW. The first modulation_ex query subscribes
       // this connection: deskHPSDR then follows every modulation with a modulation_ex.
+      // A subscribed client also gets VFO B's mode with one receiver; the second query asks
+      // for its current value, which the server does not send on its own.
       send('modulation_ex:0;');
+      send('modulation_ex:1;');
       // Auto-start RX audio after Thetis sends 'ready'
       S._autoStartRx = true;
 
@@ -260,18 +264,25 @@ function parseTCI(msg) {
       break;
     case 'modulation':
       if (args.length >= 2 && args[0] === '0') {
-        S.mode = modeFromTci(args[1]);
+        S.mode = modeFromTci(args[1], S.mode);
         updMode();
         // No filter query: on a mode change deskHPSDR sends rx_filter_band right after modulation.
         // Immediately re-filter DX spots if Track Mode is active
         if (dxEnabled && (el('dxTrackMode') || {}).checked) dxApplyFilter();
+      } else if (args.length >= 2 && args[0] === '1') {
+        // Index 1 is VFO B's mode, which RX2 uses while it runs
+        S.modeB = modeFromTci(args[1], S.modeB);
+        updModeB();
       }
       break;
     case 'modulation_ex':
       // deskHPSDR extension, subscribed at connect: CWL and CWU named apart.
       if (args.length >= 2 && args[0] === '0') {
-        S.mode = modeFromTci(args[1]);
+        S.mode = modeFromTci(args[1], S.mode);
         updMode();
+      } else if (args.length >= 2 && args[0] === '1') {
+        S.modeB = modeFromTci(args[1], S.modeB);
+        updModeB();
       }
       break;
     case 'trx':
@@ -422,6 +433,13 @@ function updTXRX() {
 function updMode() {
   document.querySelectorAll('#modeBtns .mode-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.m === S.mode));
+}
+
+// VFO B's mode is shown, not set: with one receiver deskHPSDR ignores a mode set on VFO B.
+// To work in another mode on B: A⇌B, change the mode on A, A⇌B.
+function updModeB() {
+  const e = el('vfoBMode');
+  if (e) e.textContent = S.modeB;
 }
 
 
@@ -624,11 +642,11 @@ document.querySelectorAll('.band-btn[data-band]').forEach(b => b.addEventListene
 
 // ── MODE ──
 // modulation reports CWL and CWU both as CW. The sideband arrives in the modulation_ex that
-// follows it; until then keep the one the client knows, otherwise CWU, which is what the
-// server applies for a plain "cw".
-function modeFromTci(name) {
+// follows it; until then keep the one the client knows for that VFO (prev), otherwise CWU,
+// which is what the server applies for a plain "cw".
+function modeFromTci(name, prev) {
   const m = name.toUpperCase();
-  if (m === 'CW') return (S.mode === 'CWL' || S.mode === 'CWU') ? S.mode : 'CWU';
+  if (m === 'CW') return (prev === 'CWL' || prev === 'CWU') ? prev : 'CWU';
   return m;
 }
 
