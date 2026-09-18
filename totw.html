@@ -8278,8 +8278,8 @@ window.addEventListener('load', () => {
   });
   el('wfC').style.cursor = 'crosshair';
 
-  // ── Scroll-to-tune (with debounce) / Ctrl+scroll-to-zoom on spectrum ──
-  el('specC').addEventListener('wheel', function(e) {
+  // ── Scroll-to-tune (with debounce) / Ctrl+scroll-to-zoom on spectrum and waterfall ──
+  function specWheel(e) {
     e.preventDefault();
     if (!S.iqOn || !IQ.fftReady) return;
     if (e.ctrlKey) {
@@ -8287,8 +8287,10 @@ window.addEventListener('load', () => {
       const rect = this.getBoundingClientRect();
       const xFrac = (e.clientX - rect.left) / rect.width;
       const SR = S.iqSR || IQ_DEFAULT_SR;
-      const vSR = SR / specZoom;
-      const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
+      // The waterfall always shows the full IQ span, the spectrum the zoomed view
+      const fullSpan = this.id === 'wfC';
+      const vSR = fullSpan ? SR : SR / specZoom;
+      const vLo = fullSpan ? S.iqCentre - SR / 2 : (specZoomCentre || S.iqCentre) - vSR / 2;
       const mouseHz = vLo + xFrac * vSR;
       const factor = e.deltaY < 0 ? 2 : 0.5;
       specZoom = Math.max(1, Math.min(32, specZoom * factor));
@@ -8330,7 +8332,9 @@ window.addEventListener('load', () => {
         if (specZoom > 1) specZoomCentre = newVfo;
       }
     }
-  }, { passive: false });
+  }
+  el('specC').addEventListener('wheel', specWheel, { passive: false });
+  el('wfC').addEventListener('wheel', specWheel, { passive: false });
 
   // Double-click spectrum to reset zoom
   el('specC').addEventListener('dblclick', function(e) {
