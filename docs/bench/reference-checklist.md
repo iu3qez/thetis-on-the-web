@@ -40,7 +40,7 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | C2 | Dopo B2, rotella sulle cifre del VFO | Un passo per scatto, console senza errori | OK |
 | C3 | Click e click destro su una cifra del VFO | Incremento e decremento di quella cifra | OK |
 | C4 | Doppio click sul VFO, scrivere una frequenza, Invio | Radio sulla frequenza scritta | OK dopo la correzione: doppio click ovunque sul VFO; il click singolo agisce dopo 250 ms. Prima: si apriva solo sulla scritta MHz |
-| C5 | A→B, B→A, A⇌B | VFO scambiati come indicato, anche in GUI | KO di usabilita': l'operatore non trova come selezionare VFO B. Il client non ha un VFO attivo; VFO B si sintonizza solo dalle sue cifre grigie sotto A→B (issue #15) |
+| C5 | VFO A e VFO B su bande e modi diversi; A→B, B→A, A⇌B | Si sposta tutto il VFO, anche in GUI: frequenza, banda, modo e filtro. I pulsanti di banda e di modo seguono VFO A; accanto a VFO B compare il suo modo | KO di usabilita': l'operatore non trova come selezionare VFO B. Il client non ha un VFO attivo; VFO B si sintonizza solo dalle sue cifre grigie sotto A→B (issue #15) |
 | C6 | Rotella sullo spettro | Sintonia a passi, lo spettro segue | OK, spettro e waterfall; sul waterfall aggiunti dopo la prima esecuzione sintonia e zoom con la rotella |
 | C7 | Click e drag sullo spettro | Sintonia alla frequenza sotto il cursore | OK |
 | C8 | Click sul waterfall | Sintonia alla frequenza sotto il cursore | OK |
@@ -67,6 +67,8 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | E2 | Selezionare tre larghezze di filtro | Filtro cambiato anche in GUI | OK |
 | E3 | Impostare LO e HI a mano, SET | Filtro personalizzato applicato | OK |
 | E4 | Dalla GUI di deskHPSDR: CWL, CWU, FM, LSB | Il pulsante di modo di TOTW segue, CWL e CWU distinti | OK |
+| E5 | Una sola RX, VFO B in un modo diverso da VFO A; DISCONNECT e CONNECT, poi A⇌B con VFO A in CWL | Accanto a VFO B il modo di VFO B della GUI, subito dopo la connessione; dopo A⇌B, CWL e non CWU | |
+| E6 | RX2 accesa, cambiare il modo di RX2 dalla GUI di deskHPSDR | Il modo accanto a VFO B segue | |
 
 ## F. Controlli RX
 
