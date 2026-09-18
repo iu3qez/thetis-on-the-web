@@ -2,53 +2,55 @@
 
 Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all.
 
-## Lavoro e verifica
+Each heading carries in parentheses the Italian name used by the plans and handoffs written before this translation.
 
-### Unita' d'implementazione
-La piu' piccola porzione di lavoro che il piano assegna e che si integra da sola, identificata da una sigla e tracciata da una issue.
+## Work and verification
 
-Le unita' dichiarano le proprie dipendenze, e l'ordine fra due di esse puo' essere vincolante e non soltanto consigliato: quando i difetti che due unita' correggono si mascherano a vicenda, correggerne uno da solo produce un peggioramento visibile che si legge come regressione. Un'unita' implementata e integrata non e' ancora un'unita' accettata: le manca la verifica al banco.
+### Implementation unit (unita' d'implementazione)
+The smallest piece of work the plan assigns that integrates on its own, identified by a code and tracked by an issue.
 
-### Ricognizione
-La passata di accertamento condotta sul client non modificato, prima di scrivere codice, per confermare che i difetti previsti dall'analisi si manifestino davvero.
+Units declare their dependencies, and the order between two of them can be binding rather than merely advised: when the defects two units fix mask each other, fixing one alone produces a visible deterioration that reads as a regression. A unit that is implemented and integrated is not yet an accepted unit: it still lacks bench verification.
 
-Ha condizioni di stop dichiarate in anticipo: se il sintomo atteso non compare, l'analisi va rivista prima dell'implementazione invece di procedere. Una condizione di stop vale solo se il suo esito cambia a seconda che l'analisi sia giusta o sbagliata; le condizioni formulate su cio' che si vede sullo schermo spesso non hanno questa proprieta'.
+### Reconnaissance (ricognizione)
+The fact-finding pass run on the unmodified client, before writing code, to confirm that the defects the analysis predicts actually show up.
 
-### Verifica al banco
-La verifica condotta dall'operatore con la radio accesa, distinta dai controlli che girano senza hardware.
+It has stop conditions declared in advance: if the expected symptom does not appear, the analysis is revised before implementation instead of going ahead. A stop condition is valid only if its outcome changes depending on whether the analysis is right or wrong; conditions phrased in terms of what is seen on screen often lack this property.
 
-E' la condizione che chiude l'unita', e non e' surrogabile: i controlli senza hardware possono dire che il codice fa cio' che il codice dice, non che la stazione funziona. Ne segue che un'unita' puo' restare a lungo integrata e non accettata.
+### Bench verification (verifica al banco)
+The verification carried out by the operator with the radio on, as distinct from the checks that run without hardware.
 
-## Artefatti del client
+It is the condition that closes a unit, and nothing substitutes for it: checks without hardware can say that the code does what the code says, not that the station works. It follows that a unit can stay integrated and not accepted for a long time.
 
-### Variante portabile
-L'artefatto autocontenuto del client: un singolo documento con stile e codice incorporati, che si copia su una chiavetta e si apre in un browser senza server ne' compilazione. E' la proprieta' piu' utile del progetto e vincola ogni unita' a stare dentro quel file.
+## Client artefacts
 
-### Variante scomposta
-La stessa applicazione con stile e codice in file separati, pensata per essere servita da un sito.
+### Portable variant (variante portabile)
+The self-contained artefact of the client: a single document with style and code embedded, which can be copied to a USB stick and opened in a browser with no server and no build. It is the most useful property of the project, and it binds every unit to stay inside that file.
 
-E' derivata dalla variante portabile, non parallela a essa: si rigenera e non si modifica a mano. Lo strumento di generazione funziona nei due versi, quindi una modifica fatta sulla variante scomposta viene cancellata senza avviso alla rigenerazione successiva.
+### Split variant (variante scomposta)
+The same application with style and code in separate files, meant to be served from a website.
 
-## Spettro
+It is derived from the portable variant, not parallel to it: it is regenerated, never edited by hand. The generation tool works in both directions, so a change made to the split variant is erased without warning at the next regeneration.
 
-### Sorgente spettro
-Il flusso da cui la traccia dello spettro viene alimentata. Sono due: i campioni IQ, su cui il client calcola la trasformata localmente, e i bin gia' decimati calcolati dal server.
+## Spectrum
 
-La traccia disegnata e' una sola e non sa da quale delle due arriva; la scelta e' esplicita e non dedotta, perche' l'operatore sa meglio di qualunque euristica se si trova in rete locale o su un collegamento stretto. Le due sorgenti differiscono per banda occupata di oltre un ordine di grandezza, ed e' questa la ragione per cui la seconda esiste.
+### Spectrum source (sorgente spettro)
+The stream that feeds the spectrum trace. There are two: the IQ samples, on which the client computes the transform locally, and the already-decimated bins computed by the server.
 
-### Liveness della traccia
-La proprieta' che distingue una traccia che viene aggiornata da una che e' soltanto disegnata.
+There is only one drawn trace, and it does not know which of the two feeds it; the choice is explicit, not inferred, because the operator knows better than any heuristic whether they are on a local network or on a thin link. The two sources differ in bandwidth by more than an order of magnitude, and that is why the second one exists.
 
-Non coincide con la disponibilita' dei dati: una traccia puo' restare visibile indefinitamente mostrando l'ultimo contenuto ricevuto, se il flag che ne autorizza il disegno non viene invalidato dalla stessa condizione che lo produce. Il discriminante affidabile e' un contatore di frame che avanza fra due letture, mai lo stato del disegno.
+### Trace liveness (liveness della traccia)
+The property that distinguishes a trace that is being updated from one that is merely drawn.
 
-### Finestra di vista
-L'intervallo di frequenza che il panadapter mostra, definito da centro e span, comune a spettro, waterfall, marker e interazioni col puntatore.
+It does not coincide with data availability: a trace can stay visible indefinitely showing the last content received, if the flag that allows drawing it is not invalidated by the same condition that produces it. The reliable discriminator is a frame counter that advances between two readings, never the drawing state.
 
-E' distinta dalla banda disponibile, cioe' cio' che la sorgente spettro fornisce: con i campioni IQ lo zoom ritaglia la banda in locale, con i bin lo zoom diventa una richiesta di span al server. Quando due parti del pannello calcolano la propria finestra, si disallineano.
+### View window (finestra di vista)
+The frequency range the panadapter shows, defined by centre and span, shared by spectrum, waterfall, markers and pointer interactions.
 
-## Perimetro
+It is distinct from the available band, that is, what the spectrum source provides: with IQ samples the zoom crops the band locally, with bins the zoom becomes a span request to the server. When two parts of the panel compute their own window, they drift apart.
 
-### Costo zero
-Lo stato di una funzione che resta nel client senza investimento: si sposta com'e', si collega al codice nuovo solo dove non costa lavoro, e altrimenti le si permette di degradare.
+## Scope
 
-Non e' una funzione supportata ne' una funzione rimossa. Una correzione che serve a tenerla viva oltre quel limite e' una decisione dell'operatore, non un dettaglio d'implementazione.
+### Zero cost (costo zero)
+The state of a feature that stays in the client without investment: it is moved as it is, wired to the new code only where that costs no work, and otherwise allowed to degrade.
+
+It is neither a supported feature nor a removed one. A fix needed to keep it alive beyond that limit is an operator decision, not an implementation detail.
