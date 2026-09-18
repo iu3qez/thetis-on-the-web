@@ -8,11 +8,11 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | Campo | Valore |
 |---|---|
-| Commit del client | `fd0a96f`; B1, C1, C4, C6 e F6 riprovate su `941ee93` |
+| Commit del client | `fd0a96f`; B1, C1, C4, C6 e F6 riprovate su `941ee93`; E1-E4, F9 e F10 su `4fbac98` |
 | Browser e versione | Firefox, ultima versione per macOS al 2026-09-18 |
 | Apertura | file:// (A1), poi server locale `http://127.0.0.1:8765/totw.html` |
 | Stazione | `ubuntu.lan`, TCI 50001 |
-| Build di deskHPSDR | `master` a `3379cb8` (merge di upstream del 2026-09-18), compilata il 2026-09-18 alle 20:04, libwebsockets statica `d7f7fdeaf`; senza il branch locale `fix/tci-trx-owner-race` |
+| Build di deskHPSDR | `master` a `3379cb8` (merge di upstream del 2026-09-18), compilata il 2026-09-18 alle 20:04, libwebsockets statica `d7f7fdeaf`; senza il branch locale `fix/tci-trx-owner-race`. E1-E4, F9 e F10 su `master` a `283cf6d` (merge della PR #25, con le PR #21, #22 e #23), compilata il 2026-09-18 alle 23:30 |
 | Data | 2026-09-18 |
 
 ## A. Apertura e connessione
@@ -59,10 +59,10 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | ID | Azione | Atteso | Esito |
 |---|---|---|---|
-| E1 | Selezionare LSB, USB, CWL, CWU, AM | Modo cambiato anche in GUI | |
-| E2 | Selezionare tre larghezze di filtro | Filtro cambiato anche in GUI | |
-| E3 | Impostare LO e HI a mano, SET | Filtro personalizzato applicato | |
-| E4 | Dalla GUI di deskHPSDR: CWL, CWU, FM, LSB | Il pulsante di modo di TOTW segue, CWL e CWU distinti | |
+| E1 | Selezionare LSB, USB, CWL, CWU, AM | Modo cambiato anche in GUI | OK |
+| E2 | Selezionare tre larghezze di filtro | Filtro cambiato anche in GUI | OK |
+| E3 | Impostare LO e HI a mano, SET | Filtro personalizzato applicato | OK |
+| E4 | Dalla GUI di deskHPSDR: CWL, CWU, FM, LSB | Il pulsante di modo di TOTW segue, CWL e CWU distinti | OK |
 
 ## F. Controlli RX
 
@@ -76,8 +76,8 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | F6 | Slider CAL dell'S-meter | Lettura spostata dell'offset | Assente: slider CAL rimosso il 2026-09-18, non agiva piu' su nessuna lettura |
 | F7 | Split acceso e spento dalla GUI di deskHPSDR | Il pulsante SPLIT di TOTW segue | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
 | F8 | SPLIT da TOTW | Split segue in GUI | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
-| F9 | RX2 ON da TOTW, acceso e spento | RX2 acceso e spento in GUI; il pulsante cambia solo dopo la risposta della radio | |
-| F10 | RX2 acceso e spento dalla GUI di deskHPSDR | Il pulsante RX2 ON di TOTW segue | |
+| F9 | RX2 ON da TOTW, acceso e spento | RX2 acceso e spento in GUI; il pulsante cambia solo dopo la risposta della radio | OK |
+| F10 | RX2 acceso e spento dalla GUI di deskHPSDR | Il pulsante RX2 ON di TOTW segue | OK |
 
 ## J. Trasmissione, su carico fittizio
 
