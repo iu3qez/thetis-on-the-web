@@ -8,7 +8,7 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | Campo | Valore |
 |---|---|
-| Commit del client | `fd0a96f` |
+| Commit del client | `fd0a96f`; B1, C1, C4, C6 e F6 riprovate su `941ee93` |
 | Browser e versione | Firefox, ultima versione per macOS al 2026-09-18 |
 | Apertura | file:// (A1), poi server locale `http://127.0.0.1:8765/totw.html` |
 | Stazione | `ubuntu.lan`, TCI 50001 |
@@ -29,19 +29,19 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | ID | Azione | Atteso | Esito |
 |---|---|---|---|
-| B1 | Click su 40m, poi 20m | VFO e modo cambiano anche nella GUI di deskHPSDR | Parziale: VFO e modo seguono; tornando su 40m (40, 20, di nuovo 40) la frequenza usata prima su 40m non viene ripristinata, il client non ha memoria per banda |
+| B1 | Click su 40m, poi 20m | VFO e modo cambiano anche nella GUI di deskHPSDR | OK dopo la correzione: le bande passano per `band_ex` e tornano all'ultima frequenza, modo e filtro. Prima: la frequenza precedente sulla banda si perdeva |
 | B2 | Click su ⚙, chiudere; click su DIAG, chiudere; click su ? , chiudere | Il VFO non cambia | OK |
 
 ## C. Sintonia
 
 | ID | Azione | Atteso | Esito |
 |---|---|---|---|
-| C1 | Rotella del mouse sulle cifre del VFO, uno scatto | Un passo, radio allineata | OK; formato della frequenza poco leggibile: MHz con quattro decimali attaccati (7.1234), senza stacco dopo la cifra dei kHz; atteso per esempio 7.123 4 |
+| C1 | Rotella del mouse sulle cifre del VFO, uno scatto | Un passo, radio allineata | OK dopo la correzione: `7.123 4 MHz`. Prima: quattro decimali attaccati, e arrotondamento sbagliato vicino al cambio di MHz |
 | C2 | Dopo B2, rotella sulle cifre del VFO | Un passo per scatto, console senza errori | OK |
 | C3 | Click e click destro su una cifra del VFO | Incremento e decremento di quella cifra | OK |
-| C4 | Doppio click sul VFO, scrivere una frequenza, Invio | Radio sulla frequenza scritta | Parziale: l'inserimento si apre solo con doppio click sulla scritta MHz; sulle cifre il doppio click le incrementa o decrementa |
+| C4 | Doppio click sul VFO, scrivere una frequenza, Invio | Radio sulla frequenza scritta | OK dopo la correzione: doppio click ovunque sul VFO; il click singolo agisce dopo 250 ms. Prima: si apriva solo sulla scritta MHz |
 | C5 | A→B, B→A, A⇌B | VFO scambiati come indicato, anche in GUI | KO di usabilita': l'operatore non trova come selezionare VFO B. Il client non ha un VFO attivo; VFO B si sintonizza solo dalle sue cifre grigie sotto A→B (issue #15) |
-| C6 | Rotella sullo spettro | Sintonia a passi, lo spettro segue | OK sullo spettro; sul waterfall la rotella non sintonizza, da aggiungere per coerenza |
+| C6 | Rotella sullo spettro | Sintonia a passi, lo spettro segue | OK, spettro e waterfall; sul waterfall aggiunti dopo la prima esecuzione sintonia e zoom con la rotella |
 | C7 | Click e drag sullo spettro | Sintonia alla frequenza sotto il cursore | OK |
 | C8 | Click sul waterfall | Sintonia alla frequenza sotto il cursore | OK |
 | C9 | Frecce su e giu' da tastiera | Un passo per pressione | OK |
@@ -72,7 +72,7 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | F3 | Slider AF | Volume RX1 segue in GUI | OK |
 | F4 | Slider AF di RX2, se RX2 esiste | Volume RX2 segue in GUI | OK |
 | F5 | Segnale forte e banda silenziosa | S-meter segue il segnale | OK |
-| F6 | Slider CAL dell'S-meter | Lettura spostata dell'offset | KO: nessun effetto. CAL corregge solo la lettura di ripiego dallo spettro IQ; da U1 l'S-meter usa `rx_sensors`, gia' calibrato dal server |
+| F6 | Slider CAL dell'S-meter | Lettura spostata dell'offset | Assente: slider CAL rimosso il 2026-09-18, non agiva piu' su nessuna lettura |
 | F7 | Split acceso e spento dalla GUI di deskHPSDR | Il pulsante SPLIT di TOTW segue | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
 | F8 | SPLIT da TOTW | Split segue in GUI | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
 
