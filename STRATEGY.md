@@ -5,51 +5,51 @@ last_updated: 2026-09-13
 
 # Thetis On The Web Strategy
 
-Thetis On The Web è l'interfaccia browser della stazione remota descritta nei requisiti di deskHPSDR; questo documento copre solo il client.
+Thetis On The Web is the browser interface of the remote station described in the deskHPSDR requirements; this document covers only the client.
 
 ## Purpose
 
-L'operatore vuole usare la propria stazione HPSDR da remoto, da un portatile, con un'interfaccia radio che sta tutta nel browser. Il nodo è il collegamento: i client esistenti presumono la LAN, e spettro e audio a piena risoluzione costano megabit che su un 4G non ci sono.
+The operator wants to use their own HPSDR station remotely, from a laptop, with a radio interface that lives entirely in the browser. The crux is the link: existing clients assume a LAN, and full-resolution spectrum and audio cost megabits that a 4G link does not have.
 
 ## Positioning
 
-Possediamo entrambi i capi del collegamento: il server calcola quello che il client deve mostrare e manda solo quello, così il client resta un file da browser che funziona anche su un 4G. I percorsi critici, audio e morse, non passano da qui; il resto è best effort.
+We own both ends of the link: the server computes what the client needs to show and sends only that, so the client stays a browser file that works even over 4G. The critical paths, audio and Morse, do not go through here; everything else is best effort.
 
 ## Users
 
-**Primary:** Il radioamatore proprietario della stazione, da solo, lontano dallo shack - Affida a Thetis On The Web il compito di condurre un QSO come se fosse davanti alla radio: vedere la banda, sintonizzare, pilotare la stazione.
+**Primary:** The radio amateur who owns the station, alone, away from the shack - Relies on Thetis On The Web to run a QSO as if sitting at the radio: see the band, tune, drive the station.
 
 ## Boundaries
 
-- Compatibilità con Thetis o con altri server TCI: si lavora solo con deskHPSDR.
-- iPad, telefoni e iOS: il bersaglio è un portatile con browser desktop.
-- Audio e morse nel browser: passano per trasporti propri, fuori da questo client.
-- Multi-operatore: non in questa fase.
-- Funzioni ereditate che chiamano servizi esterni: nessun investimento, si tolgono se costano banda o danno problemi.
-- Il progetto originale: non si segue e non si cita.
+- Compatibility with Thetis or other TCI servers: the client works only with deskHPSDR.
+- iPad, phones and iOS: the target is a laptop with a desktop browser.
+- Audio and Morse in the browser: they travel over their own transports, outside this client.
+- Multiple operators: not at this stage.
+- Inherited features that call external services: no investment; they are removed if they cost bandwidth or cause problems.
+- The original project: not followed and not referenced.
 
-_Resist a change when:_ porta nel client un percorso critico, lo lega a un server che non è deskHPSDR, o spende banda del 4G per qualcosa che la stazione non usa.
+_Resist a change when:_ it brings a critical path into the client, ties the client to a server other than deskHPSDR, or spends 4G bandwidth on something the station does not use.
 
 ## Key metrics
 
-- **QSO completi da remoto** - contatti conclusi senza tornare allo shack; dal log di stazione.
-- **Sessioni perse per il collegamento** - sessioni remote abbandonate perché spettro, audio o controllo erano inutilizzabili; annotate dall'operatore.
-- **Banda per sessione** - kbit/s medi di una sessione tipica con spettro a bin, tetto 50; dal monitor di rete del client.
-- **Ritardo di comando su 4G** - tempo fra un'azione dalla console e la conferma del server; misura da introdurre.
+- **Complete remote QSOs** - contacts completed without going back to the shack; from the station log.
+- **Sessions lost to the link** - remote sessions abandoned because spectrum, audio or control were unusable; noted by the operator.
+- **Bandwidth per session** - average kbit/s of a typical session with the bin spectrum, capped at 50; from the client's network monitor.
+- **Command latency over 4G** - time between an action at the console and the server's confirmation; measurement still to be introduced.
 
 ## Tracks
 
-### Spettro su banda stretta
+### Low-bandwidth spectrum
 
-Lo spettro calcolato dal server arriva come bin e alimenta la traccia: stream a bin, span che segue lo zoom, scelta esplicita fra bin e IQ.
+The spectrum computed by the server arrives as bins and feeds the trace: a bin stream, a span that follows the zoom, an explicit choice between bins and IQ.
 
-_Why it serves the approach:_ è il lavoro spostato sul server, ed è ciò che porta lo spettro sotto il tetto di banda.
+_Why it serves the approach:_ it is the work moved to the server, and it is what brings the spectrum under the bandwidth cap.
 
-### Pannello fisico
+### Physical panel
 
-La stazione si pilota da una console MIDI come davanti alla radio: jog sul VFO, comandi a due stati, LED di stato.
+The station is driven from a MIDI console as if sitting at the radio: jog on the VFO, two-state controls, status LEDs.
 
-_Why it serves the approach:_ banda e attenuatore passano per i comandi estesi che esistono solo perché il server è vostro.
+_Why it serves the approach:_ band and attenuator go through the extended commands that exist only because the server is ours.
 
 ## Brand
 
