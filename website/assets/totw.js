@@ -284,6 +284,10 @@ function parseTCI(msg) {
       // deskHPSDR sends split_enable:<trx>,<bool>; the state is the last argument.
       TG.split = args[args.length - 1]==='true'; el('splitC').classList.toggle('on', TG.split);
       break;
+    case 'band_ex':
+      // Reply to a band button: band_ex:<rx>,<band>[,error]. VFO and mode arrive as broadcasts.
+      if (args[2] === 'error') log('err', 'Band ' + args[1] + 'm: change refused by the radio');
+      break;
     case 'line_in':
       // Thetis broadcasting line_in state to other clients — just log it
       log('sys', 'Thetis line_in: ' + (args[1]||'?') + ' (notification to other clients)');
@@ -573,19 +577,13 @@ function setStep(btn, hz) {
 }
 
 // ── BAND ──
-const bandDfltMode = {
-  '160m':'LSB','80m':'LSB','60m':'USB','40m':'LSB','30m':'USB',
-  '20m':'USB','17m':'USB','15m':'USB','12m':'USB','10m':'USB','6m':'USB'
-};
-// Only real band buttons carry data-freq: the top-bar ⚙, DIAG and ? buttons share the
-// .band-btn class for styling and must not tune the VFO.
-document.querySelectorAll('.band-btn[data-freq]').forEach(b => b.addEventListener('click', () => {
-  document.querySelectorAll('.band-btn[data-freq]').forEach(x => x.classList.remove('active'));
-  b.classList.add('active');
-  const hz = parseInt(b.dataset.freq);
-  setVfoDisp('A', hz);
-  send('vfo:0,0,'+hz+';');
-  setMode(bandDfltMode[b.dataset.band]||'USB');
+// Only real band buttons carry data-band: the top-bar ⚙, DIAG and ? buttons share the
+// .band-btn class for styling and must not change band.
+// The band changes through deskHPSDR's band stack, as in its GUI: the radio returns to
+// the frequency, mode and filter last used on that band. VFO, mode and the active
+// button follow the broadcasts the server sends after the change.
+document.querySelectorAll('.band-btn[data-band]').forEach(b => b.addEventListener('click', () => {
+  send('band_ex:0,' + b.dataset.band.replace(/m$/, '') + ';');
 }));
 
 // ── MODE ──

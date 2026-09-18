@@ -3332,17 +3332,17 @@ html[data-touch] #mobileDrawer { display: block; }
     <div class="dock-handle"><span class="dock-title">Bands</span><span class="dock-collapse" title="Collapse/expand">▾</span></div>
     <div class="dock-body">
       <div style="display:flex;flex-wrap:wrap;gap:3px;">
-        <button class="band-btn" data-band="160m" data-freq="1900000">160m</button>
-        <button class="band-btn" data-band="80m"  data-freq="3700000">80m</button>
-        <button class="band-btn" data-band="60m"  data-freq="5330500">60m</button>
-        <button class="band-btn" data-band="40m"  data-freq="7200000">40m</button>
-        <button class="band-btn" data-band="30m"  data-freq="10130000">30m</button>
-        <button class="band-btn active" data-band="20m" data-freq="14225000">20m</button>
-        <button class="band-btn" data-band="17m"  data-freq="18130000">17m</button>
-        <button class="band-btn" data-band="15m"  data-freq="21300000">15m</button>
-        <button class="band-btn" data-band="12m"  data-freq="24940000">12m</button>
-        <button class="band-btn" data-band="10m"  data-freq="28500000">10m</button>
-        <button class="band-btn" data-band="6m"   data-freq="50200000">6m</button>
+        <button class="band-btn" data-band="160m">160m</button>
+        <button class="band-btn" data-band="80m">80m</button>
+        <button class="band-btn" data-band="60m">60m</button>
+        <button class="band-btn" data-band="40m">40m</button>
+        <button class="band-btn" data-band="30m">30m</button>
+        <button class="band-btn active" data-band="20m">20m</button>
+        <button class="band-btn" data-band="17m">17m</button>
+        <button class="band-btn" data-band="15m">15m</button>
+        <button class="band-btn" data-band="12m">12m</button>
+        <button class="band-btn" data-band="10m">10m</button>
+        <button class="band-btn" data-band="6m">6m</button>
       </div>
     </div>
   </div>
@@ -4349,6 +4349,10 @@ function parseTCI(msg) {
       // deskHPSDR sends split_enable:<trx>,<bool>; the state is the last argument.
       TG.split = args[args.length - 1]==='true'; el('splitC').classList.toggle('on', TG.split);
       break;
+    case 'band_ex':
+      // Reply to a band button: band_ex:<rx>,<band>[,error]. VFO and mode arrive as broadcasts.
+      if (args[2] === 'error') log('err', 'Band ' + args[1] + 'm: change refused by the radio');
+      break;
     case 'line_in':
       // Thetis broadcasting line_in state to other clients — just log it
       log('sys', 'Thetis line_in: ' + (args[1]||'?') + ' (notification to other clients)');
@@ -4638,19 +4642,13 @@ function setStep(btn, hz) {
 }
 
 // ── BAND ──
-const bandDfltMode = {
-  '160m':'LSB','80m':'LSB','60m':'USB','40m':'LSB','30m':'USB',
-  '20m':'USB','17m':'USB','15m':'USB','12m':'USB','10m':'USB','6m':'USB'
-};
-// Only real band buttons carry data-freq: the top-bar ⚙, DIAG and ? buttons share the
-// .band-btn class for styling and must not tune the VFO.
-document.querySelectorAll('.band-btn[data-freq]').forEach(b => b.addEventListener('click', () => {
-  document.querySelectorAll('.band-btn[data-freq]').forEach(x => x.classList.remove('active'));
-  b.classList.add('active');
-  const hz = parseInt(b.dataset.freq);
-  setVfoDisp('A', hz);
-  send('vfo:0,0,'+hz+';');
-  setMode(bandDfltMode[b.dataset.band]||'USB');
+// Only real band buttons carry data-band: the top-bar ⚙, DIAG and ? buttons share the
+// .band-btn class for styling and must not change band.
+// The band changes through deskHPSDR's band stack, as in its GUI: the radio returns to
+// the frequency, mode and filter last used on that band. VFO, mode and the active
+// button follow the broadcasts the server sends after the change.
+document.querySelectorAll('.band-btn[data-band]').forEach(b => b.addEventListener('click', () => {
+  send('band_ex:0,' + b.dataset.band.replace(/m$/, '') + ';');
 }));
 
 // ── MODE ──
@@ -8948,17 +8946,17 @@ window.addEventListener('unload', () => {
   <!-- Band -->
   <span class="mdrw-lbl">Band</span>
   <div class="mdrw-row">
-    <button class="band-btn" data-band="160m" data-freq="1900000">160m</button>
-    <button class="band-btn" data-band="80m"  data-freq="3700000">80m</button>
-    <button class="band-btn" data-band="60m"  data-freq="5330500">60m</button>
-    <button class="band-btn" data-band="40m"  data-freq="7200000">40m</button>
-    <button class="band-btn" data-band="30m"  data-freq="10130000">30m</button>
-    <button class="band-btn" data-band="20m"  data-freq="14225000">20m</button>
-    <button class="band-btn" data-band="17m"  data-freq="18130000">17m</button>
-    <button class="band-btn" data-band="15m"  data-freq="21300000">15m</button>
-    <button class="band-btn" data-band="12m"  data-freq="24940000">12m</button>
-    <button class="band-btn" data-band="10m"  data-freq="28500000">10m</button>
-    <button class="band-btn" data-band="6m"   data-freq="50200000">6m</button>
+    <button class="band-btn" data-band="160m">160m</button>
+    <button class="band-btn" data-band="80m">80m</button>
+    <button class="band-btn" data-band="60m">60m</button>
+    <button class="band-btn" data-band="40m">40m</button>
+    <button class="band-btn" data-band="30m">30m</button>
+    <button class="band-btn" data-band="20m">20m</button>
+    <button class="band-btn" data-band="17m">17m</button>
+    <button class="band-btn" data-band="15m">15m</button>
+    <button class="band-btn" data-band="12m">12m</button>
+    <button class="band-btn" data-band="10m">10m</button>
+    <button class="band-btn" data-band="6m">6m</button>
   </div>
 
   <!-- Mode -->
