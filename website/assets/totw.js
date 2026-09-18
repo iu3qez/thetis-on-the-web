@@ -189,7 +189,7 @@ const _logSilence = new Set([
   'protocol','device','receive_only','trx_count','channels_count',
   'vfo_limits','if_limits','modulations_list','dds',
   'tx_frequency','tx_frequency_thetis',
-  'rx_enable','rx_nr_enable','rx_nr_enable_ex',
+  'rx_nr_enable','rx_nr_enable_ex',
   'tx_power','swr',
   'rx_volume','rx_ctun_ex','rx_mute',
   'tx_profiles_ex','tx_profile_ex','calibration_ex',
@@ -291,6 +291,13 @@ function parseTCI(msg) {
       break;
 
 
+    case 'rx_enable':
+      // deskHPSDR answers every rx_enable request and sends every change of RX2, also one
+      // made from its own GUI or CAT.
+      if (args.length >= 2 && args[0] === '1') {
+        TG.rx2 = args[1] === 'true'; el('rx2C').classList.toggle('on', TG.rx2);
+      }
+      break;
     case 'split_enable':
       // deskHPSDR sends split_enable:<trx>,<bool>; the state is the last argument.
       TG.split = args[args.length - 1]==='true'; el('splitC').classList.toggle('on', TG.split);
@@ -782,7 +789,9 @@ function setAnt(n) {
 }
 
 // ── RX2 / DIV ──
-function togRX2() { TG.rx2=!TG.rx2; el('rx2C').classList.toggle('on',TG.rx2); send('rx_enable:1,'+TG.rx2+';'); }
+// Only the request: the chip follows the rx_enable the server answers, since deskHPSDR
+// refuses the switch while transmitting.
+function togRX2() { send('rx_enable:1,' + !TG.rx2 + ';'); }
 
 // ── AUDIO ──
 async function togAudio(dir) {
