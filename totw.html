@@ -4309,9 +4309,7 @@ function parseTCI(msg) {
       if (args.length >= 2 && args[0] === '0') {
         S.mode = modeFromTci(args[1]);
         updMode();
-        // The server does not broadcast the filter it restores for the new mode
-        // (`iu3qez/deskhpsdr` #19): ask for it now that the change is applied.
-        send('rx_filter_band:0;');
+        // No filter query: on a mode change deskHPSDR sends rx_filter_band right after modulation.
         // Immediately re-filter DX spots if Track Mode is active
         if (dxEnabled && (el('dxTrackMode') || {}).checked) dxApplyFilter();
       }
