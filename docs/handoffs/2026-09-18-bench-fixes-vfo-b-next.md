@@ -84,7 +84,7 @@ Aperto, mia proposta non confermata: il VFO attivo vale solo per la sintonia; ba
 ## La stazione (stato machine-local)
 
 - deskHPSDR su `ubuntu.lan`: `master` a `3379cb8`, compilato il 2026-09-18 alle 20:04, libwebsockets statica `d7f7fdeaf`, TCI 50001.
-- Il branch `fix/tci-trx-owner-race` (`d2de1c9`, proprieta' del TX con MOX o TUNE in coda) esiste **solo sulla stazione**: non e' su GitHub e non e' nella build.
+- La correzione della proprieta' del TX con MOX o TUNE in coda (`fix/tci-trx-owner-race`) e' pubblicata come PR `iu3qez/deskhpsdr` #21, riallineata a `master` e non ancora provata alla radio; **non e' nella build in uso**. La copia di riferimento e' il worktree `tci-trx-owner-race` del checkout di deskHPSDR sul Mac; la stazione ne ha un duplicato locale con lo stesso diff.
 - Binari di backup non tracciati in `~/deskhpsdr/`: `deskhpsdr.4752ddc-lws5`, `deskhpsdr.4ba2797-lws5`, `deskhpsdr.eaec707-lws5`.
 
 ## Come si e' verificato
@@ -110,4 +110,4 @@ Un percorso, in ordine:
 2. VFO B e split con le decisioni sopra, un commit per parte, provati col server finto e poi al banco (C5, F7, F8 della checklist).
 3. U2, le rimozioni, confrontando con la checklist.
 
-Indipendenti: le issue #17-#20 lato server; il destino del branch `fix/tci-trx-owner-race` sulla stazione.
+Indipendenti: le issue #17-#20 lato server; la PR #21 di deskHPSDR, da provare al banco con tocchi rapidi del PTT e doppio click su TUNE.
