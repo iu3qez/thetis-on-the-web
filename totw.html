@@ -4172,6 +4172,9 @@ function connect() {
       acquireWakeLock();
       setUI(true);
       log('sys', 'Connected — Thetis TCI online');
+      // modulation reports CWL and CWU both as CW. The first modulation_ex query subscribes
+      // this connection: deskHPSDR then follows every modulation with a modulation_ex.
+      send('modulation_ex:0;');
       // Auto-start RX audio after Thetis sends 'ready'
       S._autoStartRx = true;
 
@@ -4311,6 +4314,13 @@ function parseTCI(msg) {
         send('rx_filter_band:0;');
         // Immediately re-filter DX spots if Track Mode is active
         if (dxEnabled && (el('dxTrackMode') || {}).checked) dxApplyFilter();
+      }
+      break;
+    case 'modulation_ex':
+      // deskHPSDR extension, subscribed at connect: CWL and CWU named apart.
+      if (args.length >= 2 && args[0] === '0') {
+        S.mode = modeFromTci(args[1]);
+        updMode();
       }
       break;
     case 'trx':
@@ -4656,8 +4666,9 @@ document.querySelectorAll('.band-btn[data-band]').forEach(b => b.addEventListene
 // deskHPSDR accepts fm and fmn but not the standard nfm (`iu3qez/deskhpsdr` #20).
 const MODE_TO_TCI = { NFM: 'FM' };
 
-// deskHPSDR reports CWL and CWU both as CW (`iu3qez/deskhpsdr` #17): keep the sideband
-// the client knows, otherwise CWU, which is what the server applies for a plain "cw".
+// modulation reports CWL and CWU both as CW. The sideband arrives in the modulation_ex that
+// follows it; until then keep the one the client knows, otherwise CWU, which is what the
+// server applies for a plain "cw".
 // FM comes back as FM, which the FM button calls NFM.
 function modeFromTci(name) {
   const m = name.toUpperCase();
