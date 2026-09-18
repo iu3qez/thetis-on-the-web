@@ -46,6 +46,10 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | C8 | Click sul waterfall | Sintonia alla frequenza sotto il cursore | OK |
 | C9 | Frecce su e giu' da tastiera | Un passo per pressione | OK |
 | C10 | Trackpad: swipe a due dita sul VFO | Annotare quanti passi produce uno swipe (difetto noto, riferimento per U7) | Diversi passi per swipe, non contati |
+| C11 | Drag di VFO A dentro la sua banda passante, circa 50 px, poi rilasciare | VFO A si ferma sotto il cursore, anche in GUI, senza andare oltre il punto di rilascio | |
+| C12 | Shift+click sullo spettro e sul waterfall | VFO B va alla frequenza sotto il cursore, anche in GUI; VFO A non si muove | |
+| C13 | Shift+drag sullo spettro | VFO B segue il cursore, anche in GUI; VFO A e la finestra IQ non si muovono | |
+| C14 | Shift+rotella sullo spettro e sul waterfall (su macOS arriva come scroll orizzontale) | VFO B a passi nei due versi, anche in GUI; VFO A non si muove | |
 
 ## D. Zoom
 
@@ -78,6 +82,9 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | F8 | SPLIT da TOTW | Split segue in GUI | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
 | F9 | RX2 ON da TOTW, acceso e spento | RX2 acceso e spento in GUI; il pulsante cambia solo dopo la risposta della radio | OK |
 | F10 | RX2 acceso e spento dalla GUI di deskHPSDR | Il pulsante RX2 ON di TOTW segue | OK |
+| F11 | Split acceso, VFO B diverso da VFO A | Linea rossa TX su VFO B nello spettro, con la frequenza di TX, e nel waterfall | |
+| F12 | Split acceso, Shift+rotella su VFO B | La linea TX segue VFO B | |
+| F13 | Split spento | Linea TX sparita; VFO B resta tratteggiato grigio su spettro e waterfall | |
 
 ## J. Trasmissione, su carico fittizio
 
