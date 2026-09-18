@@ -603,17 +603,12 @@ document.querySelectorAll('.band-btn[data-band]').forEach(b => b.addEventListene
 }));
 
 // ── MODE ──
-// deskHPSDR accepts fm and fmn but not the standard nfm (`iu3qez/deskhpsdr` #20).
-const MODE_TO_TCI = { NFM: 'FM' };
-
 // modulation reports CWL and CWU both as CW. The sideband arrives in the modulation_ex that
 // follows it; until then keep the one the client knows, otherwise CWU, which is what the
 // server applies for a plain "cw".
-// FM comes back as FM, which the FM button calls NFM.
 function modeFromTci(name) {
   const m = name.toUpperCase();
   if (m === 'CW') return (S.mode === 'CWL' || S.mode === 'CWU') ? S.mode : 'CWU';
-  if (m === 'FM') return 'NFM';
   return m;
 }
 
@@ -621,7 +616,7 @@ function setMode(m) {
   S.mode = m; updMode();
   // Only the mode: the server restores the filter stored for the new mode. Sending a
   // filter here also raced with the queued mode change (`iu3qez/deskhpsdr` #18).
-  send('modulation:0,' + (MODE_TO_TCI[m] || m) + ';');
+  send('modulation:0,' + m + ';');
   saveState();
   updateMobileBar(); // keep mobile bar mode readout current
 }
