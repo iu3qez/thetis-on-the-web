@@ -152,6 +152,8 @@ body {
   font-family: 'SF Mono','Consolas',monospace;
 }
 .vbtn:hover { background: #30363d; color: #e6edf3; border-color: #388bfd; }
+/* SPLIT sits among the VFO buttons: a chip for its on state, sized like them */
+.vfo-swap-row .chip { padding: 3px 7px; }
 
 /* Step buttons */
 .step-row { display: flex; gap: 3px; align-self: center; }
@@ -3361,6 +3363,7 @@ html[data-touch] #mobileDrawer { display: block; }
           <button class="vbtn" onclick="vfoSwap('A2B')">A→B</button>
           <button class="vbtn" onclick="vfoSwap('B2A')">B→A</button>
           <button class="vbtn" onclick="vfoSwap('SWAP')">A⇌B</button>
+          <button class="chip" id="splitC" onclick="tog('split')">SPLIT</button>
         </div>
         <div class="vfo-block">
           <div class="vfo-label">VFO B</div>
@@ -3624,7 +3627,6 @@ html[data-touch] #mobileDrawer { display: block; }
       <div class="dock-body">
         <div class="chip-grid">
           <button class="chip" id="monC"    onclick="tog('mon')">MON</button>
-          <button class="chip" id="splitC"  onclick="tog('split')">SPLIT</button>
           <button class="chip" id="muteC"   onclick="tog('mute')">MUTE</button>
         </div>
       </div>

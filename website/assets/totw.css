@@ -138,6 +138,8 @@ body {
   font-family: 'SF Mono','Consolas',monospace;
 }
 .vbtn:hover { background: #30363d; color: #e6edf3; border-color: #388bfd; }
+/* SPLIT sits among the VFO buttons: a chip for its on state, sized like them */
+.vfo-swap-row .chip { padding: 3px 7px; }
 
 /* Step buttons */
 .step-row { display: flex; gap: 3px; align-self: center; }
