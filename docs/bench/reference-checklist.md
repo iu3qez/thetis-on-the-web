@@ -67,26 +67,26 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | ID | Azione | Atteso | Esito |
 |---|---|---|---|
-| F1 | NR1, poi NR spento | NR acceso e spento in GUI (il tipo di NR puo' non seguire: difetto noto) | |
-| F2 | ANF acceso e spento | ANF segue in GUI | |
-| F3 | Slider AF | Volume RX1 segue in GUI | |
-| F4 | Slider AF di RX2, se RX2 esiste | Volume RX2 segue in GUI | |
-| F5 | Segnale forte e banda silenziosa | S-meter segue il segnale | |
-| F6 | Slider CAL dell'S-meter | Lettura spostata dell'offset | |
-| F7 | Split acceso e spento dalla GUI di deskHPSDR | Il pulsante SPLIT di TOTW segue | |
-| F8 | SPLIT da TOTW | Split segue in GUI | |
+| F1 | NR1, poi NR spento | NR acceso e spento in GUI (il tipo di NR puo' non seguire: difetto noto) | OK |
+| F2 | ANF acceso e spento | ANF segue in GUI | OK |
+| F3 | Slider AF | Volume RX1 segue in GUI | OK |
+| F4 | Slider AF di RX2, se RX2 esiste | Volume RX2 segue in GUI | OK |
+| F5 | Segnale forte e banda silenziosa | S-meter segue il segnale | OK |
+| F6 | Slider CAL dell'S-meter | Lettura spostata dell'offset | KO: nessun effetto. CAL corregge solo la lettura di ripiego dallo spettro IQ; da U1 l'S-meter usa `rx_sensors`, gia' calibrato dal server |
+| F7 | Split acceso e spento dalla GUI di deskHPSDR | Il pulsante SPLIT di TOTW segue | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
+| F8 | SPLIT da TOTW | Split segue in GUI | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
 
 ## J. Trasmissione, su carico fittizio
 
 | ID | Azione | Atteso | Esito |
 |---|---|---|---|
-| J1 | Impostazioni: timeout PTT a 1 minuto, salvare | Valore salvato | |
-| J2 | PTT momentaneo: tenere premuta la barra spaziatrice 3 s, rilasciare | TX per 3 s, poi RX; un solo comando `trx` di accensione nel log | |
-| J3 | PTT con il pulsante a video | TX e RX seguono il pulsante | |
-| J4 | TUNE acceso, attendere | TX di accordo, spento automaticamente dopo 1 minuto con riga di log | |
-| J5 | TUNE acceso e spento a mano | Segue subito | |
-| J6 | Slider DRIVE | Potenza di pilotaggio segue in GUI | |
-| J7 | Riportare il timeout PTT a 3 minuti | Valore salvato | |
+| J1 | Impostazioni: timeout PTT a 1 minuto, salvare | Valore salvato | OK |
+| J2 | PTT momentaneo: tenere premuta la barra spaziatrice 3 s, rilasciare | TX per 3 s, poi RX; un solo comando `trx` di accensione nel log | OK |
+| J3 | PTT con il pulsante a video | TX e RX seguono il pulsante | OK |
+| J4 | TUNE acceso, attendere | TX di accordo, spento automaticamente dopo 1 minuto con riga di log | OK |
+| J5 | TUNE acceso e spento a mano | Segue subito | OK |
+| J6 | Slider DRIVE | Potenza di pilotaggio segue in GUI | OK |
+| J7 | Riportare il timeout PTT a 3 minuti | Valore salvato | OK |
 
 ## K. Audio TCI
 
