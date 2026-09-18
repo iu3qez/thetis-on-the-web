@@ -4054,6 +4054,9 @@ window.addEventListener('load', () => {
   (function() {
     const cv = el('specC');
     let dragging = false, dragStartX = 0, dragStartY = 0, dragMoved = false;
+    // VFO frequency at mousedown. The drag offset counts from the start of the drag, and
+    // deskHPSDR echoes every vfo sent, so S.vfoA moves under the pointer while dragging.
+    let dragBaseHz = 0;
     let lastSendTime = 0;
     let touchStartTime = 0;
     let isVerticalSwipe = false;
@@ -4084,6 +4087,7 @@ window.addEventListener('load', () => {
       dragging = true;
       dragMoved = false;
       dragStartX = e.clientX;
+      dragBaseHz = S.vfoA;
       bpDragHzOffset = 0;
       bpDraggingInProgress = true;
       cv.style.cursor = 'grabbing';
@@ -4099,7 +4103,7 @@ window.addEventListener('load', () => {
       const SR = S.iqSR || IQ_DEFAULT_SR;
       const hzPerPx = (SR / specZoom) / rect.width;
       bpDragHzOffset = Math.round(dx * hzPerPx);
-      const previewHz = snapToStep(S.vfoA + bpDragHzOffset, S.step);
+      const previewHz = snapToStep(dragBaseHz + bpDragHzOffset, S.step);
       previewVfoDisp('A', Math.max(0, previewHz));
       // Rate-limit sends (max 20/sec)
       const now = Date.now();
@@ -4123,7 +4127,7 @@ window.addEventListener('load', () => {
       bpDraggingInProgress = false;
       cv.style.cursor = 'crosshair';
       if (dragMoved && bpDragHzOffset !== 0) {
-        const newVfo = window._previewHzA || Math.max(0, snapToStep(S.vfoA + bpDragHzOffset, S.step));
+        const newVfo = window._previewHzA || Math.max(0, snapToStep(dragBaseHz + bpDragHzOffset, S.step));
         S.vfoA = newVfo;
         setVfoDisp('A', newVfo);
         send('vfo:0,0,' + newVfo + ';');
