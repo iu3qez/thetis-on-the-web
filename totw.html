@@ -4531,15 +4531,35 @@ function setVfoDisp(vfo, hz) {
   saveState();
 }
 
-// Handle digit clicks: left-click = increment, right-click = decrement
+// Handle digit clicks: left-click = increment, right-click = decrement.
+// A double click anywhere on the VFO opens the frequency entry (ondblclick on the
+// display), so a digit click waits DIGIT_CLICK_MS before stepping: the second click
+// of a double click cancels the pending step, or undoes it when the double click
+// was slower than the wait but still within the system's double-click time.
+const DIGIT_CLICK_MS = 250;
+let _digitClick = null;  // { vfo, prevHz, timer, fired }
 document.addEventListener('click', function(e) {
   const d = e.target.closest('.vfo-digit');
   if (!d) return;
   const vfo = d.dataset.vfo;
+  if (e.detail > 1) {
+    const p = _digitClick;
+    _digitClick = null;
+    if (p && p.vfo === vfo) {
+      clearTimeout(p.timer);
+      if (p.fired) { setVfoDisp(vfo, p.prevHz); send('vfo:0,' + (vfo==='A'?'0':'1') + ',' + p.prevHz + ';'); }
+    }
+    return;
+  }
   const step = parseInt(d.dataset.hz);
-  const hz = Math.max(0, (vfo==='A' ? S.vfoA : S.vfoB) + step);
-  setVfoDisp(vfo, hz);
-  send('vfo:0,' + (vfo==='A'?'0':'1') + ',' + hz + ';');
+  const p = { vfo, prevHz: vfo==='A' ? S.vfoA : S.vfoB, fired: false };
+  p.timer = setTimeout(() => {
+    p.fired = true;
+    const hz = Math.max(0, (vfo==='A' ? S.vfoA : S.vfoB) + step);
+    setVfoDisp(vfo, hz);
+    send('vfo:0,' + (vfo==='A'?'0':'1') + ',' + hz + ';');
+  }, DIGIT_CLICK_MS);
+  _digitClick = p;
 });
 document.addEventListener('contextmenu', function(e) {
   const d = e.target.closest('.vfo-digit');
