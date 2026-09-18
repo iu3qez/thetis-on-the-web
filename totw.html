@@ -4081,6 +4081,7 @@ function iqRequestedRate() {
 const S = {
   ws: null, connected: false,
   vfoA: 14225000, vfoB: 14196000,
+  txFreq: 0,  // tx_frequency from deskHPSDR: the TX VFO's frequency, without XIT
   mode: 'USB', mox: false, tune: false,
   step: 500, _pttWatchdog: null,
   audioCtx: null, rxOn: false, txMicOn: false, micStream: null, micCtx: null, micStreaming: false, txAnalyser: null,
@@ -4297,6 +4298,11 @@ function parseTCI(msg) {
       if (args.length >= 2 && args[0] === '0') {
         S.iqCentre = parseInt(args[1]) || S.iqCentre;
       }
+      break;
+    case 'tx_frequency':
+      // Sent whenever the TX frequency changes: with split it is VFO B's, and it is also
+      // VFO B's when RX2 is the active receiver in the deskHPSDR GUI.
+      S.txFreq = parseInt(args[0]) || 0;
       break;
     case 'iq_samplerate':
       S.iqSR = parseInt(args[0]) || IQ_DEFAULT_SR;
@@ -6309,6 +6315,11 @@ let peakHoldEnabled = false;
 let peakHoldBuf = null;  // Float32Array per-pixel peak values
 let wfTheme = 0;         // 0=classic 1=heat 2=gray 3=night
 
+// The TX marker shows where deskHPSDR transmits when that is not VFO A: in split, or
+// with RX2 active in its GUI. On VFO A it would only cover the VFO A line.
+const TX_MARKER_COLOR = '#f85149';
+function txMarkerShown() { return S.txFreq > 0 && S.txFreq !== S.vfoA; }
+
 function drawSpec() {
   const cv = el('specC'); if (!cv) return;
   const W = cv.width || cv.parentElement.offsetWidth;
@@ -6523,6 +6534,17 @@ function drawSpec() {
       ctx.fillText('B ' + (S.vfoB / 1e6).toFixed(4), vfoBx + 3, 38);
     }
 
+    // ── TX marker, where the transmitter is when it is not on VFO A ──
+    const txX = txMarkerShown() ? hzToX(S.txFreq) : -1;
+    if (txX >= 0 && txX <= W) {
+      ctx.beginPath(); ctx.moveTo(txX, 0); ctx.lineTo(txX, H);
+      ctx.strokeStyle = TX_MARKER_COLOR; ctx.lineWidth = 1; ctx.stroke();
+      ctx.font = 'bold 10px SF Mono, Consolas, monospace';
+      ctx.fillStyle = TX_MARKER_COLOR;
+      ctx.textAlign = 'left';
+      ctx.fillText('TX ' + (S.txFreq / 1e6).toFixed(4), txX + 3, 48);
+    }
+
     // ── Bandwidth indicator ──
     ctx.font = '9px SF Mono, Consolas, monospace';
     ctx.fillStyle = '#484f58';
@@ -6663,6 +6685,13 @@ function drawWF() {
     const vx = hzToX(S.vfoA);
     ctx.strokeStyle = '#58a6ff44'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(vx,0); ctx.lineTo(vx,H); ctx.stroke();
+
+    // TX line, as on the spectrum
+    if (txMarkerShown()) {
+      const tx = hzToX(S.txFreq);
+      ctx.strokeStyle = TX_MARKER_COLOR; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(tx,0); ctx.lineTo(tx,H); ctx.stroke();
+    }
   }
 
   wfRAF=requestAnimationFrame(drawWF);
