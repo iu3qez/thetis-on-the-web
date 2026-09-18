@@ -1302,7 +1302,9 @@ function drawAuMeter(smp) {
 }
 
 // ── S-METER ──
-let smCal = 20;  // IQ S-meter calibration offset in dB (tune so S9 ≈ -73 dBm)
+// Fixed offset of the fallback reading derived from the IQ spectrum (S9 ≈ -73 dBm).
+// The server's rx_sensors reading is already calibrated and never goes through it.
+const SM_IQ_OFFSET_DB = 20;
 const SM = {
   dbm: null,          // current dBm reading (null = no data)
   smoothDbm: -130,    // smoothed for needle
@@ -1393,7 +1395,7 @@ function smeterFromIQ() {
 
   // Average power per bin, then to dBm
   const avgDb = 10 * Math.log10((powerSum / binCount) + 1e-20);
-  const dbm = Math.max(-140, Math.min(0, avgDb + smCal));
+  const dbm = Math.max(-140, Math.min(0, avgDb + SM_IQ_OFFSET_DB));
 
   updateSmeter(dbm, 'iq');
 }
@@ -3847,7 +3849,6 @@ function saveState() {
     const afEl = el('afSlider'), sgEl = el('specGainSlider');
     const wsEl = el('wfSpeedSlider'), fsEl = el('fftSmoothSlider');
     try {
-      const scEl = el('smCalSlider');
       localStorage.setItem(STORE_KEY, JSON.stringify({
         vfoA: S.vfoA,
         vfoB: S.vfoB,
@@ -3860,7 +3861,6 @@ function saveState() {
         specGain: sgEl ? parseInt(sgEl.value) : 20,
         wfSpeed: wsEl ? parseInt(wsEl.value) : 17,
         fftSmooth: fsEl ? parseInt(fsEl.value) : 90,
-        smCal: scEl ? parseInt(scEl.value) : 20,
         peakHold: peakHoldEnabled,
         wfTheme: wfTheme,
         specHeight: document.getElementById('specWrap') ? document.getElementById('specWrap').offsetHeight : 300,
@@ -3899,8 +3899,6 @@ function loadState() {
   if (wsEl && p.wfSpeed != null) { wfSpeed = p.wfSpeed; wsEl.value = p.wfSpeed; el('wfSpeedV').textContent = p.wfSpeed; }
   const fsEl = el('fftSmoothSlider');
   if (fsEl && p.fftSmooth != null) { IQ.smooth = p.fftSmooth / 100; fsEl.value = p.fftSmooth; el('fftSpeedV').textContent = p.fftSmooth + '%'; }
-  const scEl = el('smCalSlider');
-  if (scEl && p.smCal != null) { smCal = p.smCal; scEl.value = p.smCal; el('smCalV').textContent = (p.smCal >= 0 ? '+' : '') + p.smCal + 'dB'; }
   if (p.peakHold != null) { peakHoldEnabled = p.peakHold; const btn = el('peakHoldBtn'); if (btn) btn.classList.toggle('active', peakHoldEnabled); }
   if (p.wfTheme != null) setWfTheme(p.wfTheme);
   const specWrapEl = document.getElementById('specWrap');
