@@ -4097,7 +4097,17 @@ const TG = { split: false, mute: false, mon: false, rx2: false };
 let bpDragHzOffset = 0;          // Hz offset during drag (read by drawSpec for preview)
 let bpDraggingInProgress = false; // suppress incoming VFO updates while dragging
 let bpIgnoreVfoUpdateUntil = 0;  // timestamp — ignore radio VFO echoes until this time
+let bpIgnoreVfoBUpdateUntil = 0; // the same for VFO B, so tuning A never hides a change of B
 let sliderLastValue = 0;         // tuning slider last position
+
+// Tune VFO A or B from the displays. On receiver 0, TCI channel 0 is VFO A and channel 1
+// is VFO B, which exists also with one receiver. Shift picks VFO B (issue 15).
+function tuneVfo(v, hz) {
+  setVfoDisp(v, hz);
+  send('vfo:0,' + (v === 'B' ? 1 : 0) + ',' + hz + ';');
+  if (v === 'B') bpIgnoreVfoBUpdateUntil = Date.now() + 1000;
+  else bpIgnoreVfoUpdateUntil = Date.now() + 1000;
+}
 let _wheelCommitTimer = null;    // debounce timer for wheel tuning
 let _wheelBaseVfo = 0;           // VFO baseline when wheel scrolling starts
 let _wheelLastSend = 0;          // timestamp of last VFO send (rate-limiter)
@@ -4291,7 +4301,9 @@ function parseTCI(msg) {
         if (args[0]==='0' && args[1]==='0') {
           if (Date.now() >= bpIgnoreVfoUpdateUntil) setVfoDisp('A', v);
         }
-        if (args[0]==='0' && args[1]==='1') setVfoDisp('B', v);
+        if (args[0]==='0' && args[1]==='1') {
+          if (Date.now() >= bpIgnoreVfoBUpdateUntil) setVfoDisp('B', v);
+        }
       }
       break;
     case 'dds':
@@ -8124,6 +8136,7 @@ window.addEventListener('load', () => {
     // VFO frequency at mousedown. The drag offset counts from the start of the drag, and
     // deskHPSDR echoes every vfo sent, so S.vfoA moves under the pointer while dragging.
     let dragBaseHz = 0;
+    let dragVfo = 'A';  // 'B' when the drag started with Shift
     let lastSendTime = 0;
     let touchStartTime = 0;
     let isVerticalSwipe = false;
@@ -8150,11 +8163,13 @@ window.addEventListener('load', () => {
     // ── Mouse: drag inside passband = tune; click outside = tune ──
     cv.addEventListener('mousedown', function(e) {
       if (!S.iqOn || !IQ.fftReady) return;
-      if (!isInPassband(e.clientX)) return;
+      // Shift takes VFO B from anywhere on the spectrum; VFO A is grabbed inside its passband
+      dragVfo = e.shiftKey ? 'B' : 'A';
+      if (dragVfo === 'A' && !isInPassband(e.clientX)) return;
       dragging = true;
       dragMoved = false;
       dragStartX = e.clientX;
-      dragBaseHz = S.vfoA;
+      dragBaseHz = dragVfo === 'B' ? S.vfoB : S.vfoA;
       bpDragHzOffset = 0;
       bpDraggingInProgress = true;
       cv.style.cursor = 'grabbing';
@@ -8171,18 +8186,18 @@ window.addEventListener('load', () => {
       const hzPerPx = (SR / specZoom) / rect.width;
       bpDragHzOffset = Math.round(dx * hzPerPx);
       const previewHz = snapToStep(dragBaseHz + bpDragHzOffset, S.step);
-      previewVfoDisp('A', Math.max(0, previewHz));
+      previewVfoDisp(dragVfo, Math.max(0, previewHz));
       // Rate-limit sends (max 20/sec)
       const now = Date.now();
       if (now - lastSendTime > 50) {
-        send('vfo:0,0,' + Math.max(0, previewHz) + ';');
+        send('vfo:0,' + (dragVfo === 'B' ? 1 : 0) + ',' + Math.max(0, previewHz) + ';');
         lastSendTime = now;
       }
-      // Auto-recenter IQ stream if VFO drifts near edges
+      // Auto-recenter IQ stream if VFO A drifts near edges; the IQ window follows A only
       const loHz = S.iqCentre - SR / 2;
       const hiHz = S.iqCentre + SR / 2;
       const margin = SR * 0.15;
-      if (previewHz < loHz + margin || previewHz > hiHz - margin) {
+      if (dragVfo === 'A' && (previewHz < loHz + margin || previewHz > hiHz - margin)) {
         send('dds:0,' + previewHz + ';');
         S.iqCentre = previewHz;
       }
@@ -8194,23 +8209,21 @@ window.addEventListener('load', () => {
       bpDraggingInProgress = false;
       cv.style.cursor = 'crosshair';
       if (dragMoved && bpDragHzOffset !== 0) {
-        const newVfo = window._previewHzA || Math.max(0, snapToStep(dragBaseHz + bpDragHzOffset, S.step));
-        S.vfoA = newVfo;
-        setVfoDisp('A', newVfo);
-        send('vfo:0,0,' + newVfo + ';');
-        bpIgnoreVfoUpdateUntil = Date.now() + 1000;
+        const newVfo = window['_previewHz' + dragVfo] || Math.max(0, snapToStep(dragBaseHz + bpDragHzOffset, S.step));
+        tuneVfo(dragVfo, newVfo);
       } else if (!dragMoved && S.iqOn && IQ.fftReady) {
         const hz = Math.round(visRangeAtClientX(e.clientX));
-        if (hz > 0) { S.vfoA = hz; setVfoDisp('A', hz); send('vfo:0,0,' + hz + ';'); bpIgnoreVfoUpdateUntil = Date.now() + 1000; }
+        if (hz > 0) tuneVfo(dragVfo, hz);
       }
       bpDragHzOffset = 0;
-      window._previewHzA = null;
+      window['_previewHz' + dragVfo] = null;
       setTimeout(() => { dragMoved = false; }, 50);
     });
 
     // Click outside passband = click-to-tune
     cv.addEventListener('click', function(e) {
       if (dragMoved) return;
+      if (e.shiftKey) return;  // a Shift press always starts a drag: mouseup tuned VFO B
       if (!S.iqOn || !IQ.fftReady) return;
       if (isInPassband(e.clientX)) return;
       const hz = Math.round(visRangeAtClientX(e.clientX));
@@ -8335,7 +8348,7 @@ window.addEventListener('load', () => {
     const xFrac = (e.clientX - rect.left) / rect.width;
     const SR = S.iqSR || IQ_DEFAULT_SR;
     const hz = Math.round(S.iqCentre - SR / 2 + xFrac * SR);
-    if (hz > 0) { S.vfoA = hz; setVfoDisp('A', hz); send('vfo:0,0,' + hz + ';'); bpIgnoreVfoUpdateUntil = Date.now() + 1000; }
+    if (hz > 0) tuneVfo(e.shiftKey ? 'B' : 'A', hz);
   });
   el('wfC').style.cursor = 'crosshair';
 
@@ -8359,36 +8372,40 @@ window.addEventListener('load', () => {
       if (specZoom > 1) specZoomCentre = mouseHz;
       else specZoomCentre = S.iqCentre;
     } else {
-      // Plain wheel = step tune — commit VFO immediately (rate-limited) and pan spectrum
-      const dir = e.deltaY < 0 ? 1 : -1;
-      const newVfo = Math.max(0, snapToStep(S.vfoA + dir * S.step, S.step));
-      S.vfoA = newVfo;
-      setVfoDisp('A', newVfo);
+      // Plain wheel = step tune VFO A, Shift+wheel = VFO B — commit immediately (rate-limited).
+      // macOS turns Shift+wheel into a horizontal scroll: deltaY is 0, the movement is in deltaX.
+      const onB = e.shiftKey;
+      const delta = onB ? (e.deltaY || e.deltaX) : e.deltaY;
+      const dir = delta < 0 ? 1 : -1;
+      const newVfo = Math.max(0, snapToStep((onB ? S.vfoB : S.vfoA) + dir * S.step, S.step));
+      setVfoDisp(onB ? 'B' : 'A', newVfo);
+      const sendVfo = () => {
+        send('vfo:0,' + (onB ? '1,' + S.vfoB : '0,' + S.vfoA) + ';');
+        if (onB) bpIgnoreVfoBUpdateUntil = Date.now() + 500; else bpIgnoreVfoUpdateUntil = Date.now() + 500;
+      };
 
-      // Pan zoomed spectrum to follow VFO on every tick so the cursor never hits the edge
-      if (specZoom > 1) specZoomCentre = newVfo;
+      // Pan zoomed spectrum to follow VFO A on every tick so the cursor never hits the edge
+      if (!onB && specZoom > 1) specZoomCentre = newVfo;
 
       const now = Date.now();
       // Rate-limit TCI sends to ~20 per second to avoid flooding the radio
       if (now - _wheelLastSend >= 50) {
-        send('vfo:0,0,' + newVfo + ';');
-        bpIgnoreVfoUpdateUntil = now + 500;
+        sendVfo();
         _wheelLastSend = now;
         if (_wheelCommitTimer) { clearTimeout(_wheelCommitTimer); _wheelCommitTimer = null; }
       } else {
         // Always queue a trailing send so the final resting frequency is committed
         if (_wheelCommitTimer) clearTimeout(_wheelCommitTimer);
         _wheelCommitTimer = setTimeout(() => {
-          send('vfo:0,0,' + S.vfoA + ';');
-          bpIgnoreVfoUpdateUntil = Date.now() + 500;
+          sendVfo();
           _wheelCommitTimer = null; _wheelLastSend = Date.now();
         }, 120);
       }
 
-      // Recenter IQ when VFO drifts within 25% of an edge — keeps IQ data fresh
+      // Recenter IQ when VFO A drifts within 25% of an edge — keeps IQ data fresh
       const SR = S.iqSR || IQ_DEFAULT_SR;
       const margin = SR * 0.25;
-      if (newVfo < S.iqCentre - SR / 2 + margin || newVfo > S.iqCentre + SR / 2 - margin) {
+      if (!onB && (newVfo < S.iqCentre - SR / 2 + margin || newVfo > S.iqCentre + SR / 2 - margin)) {
         S.iqCentre = newVfo;
         if (specZoom > 1) specZoomCentre = newVfo;
       }
