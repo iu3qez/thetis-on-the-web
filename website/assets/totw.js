@@ -591,13 +591,15 @@ document.addEventListener('wheel', e => {
   send('vfo:0,'+(vfo==='A'?'0':'1')+','+hz+';');
 }, { passive: false });
 
+// A→B, B→A and A⇌B move the whole VFO, as deskHPSDR's own buttons do: band, frequency,
+// mode, filter and step. There is no reply; the result reaches every client, this one
+// included, as vfo, modulation, rx_filter_band, tx_frequency and split_enable. The displays
+// wait for those. A command within 200 ms of another TCI client's vfo set is ignored and
+// nothing changes. A tuning gesture's echo window still open would drop the result, so it
+// is closed here: the echoes of earlier steps arrive before the result, on the same socket.
 function vfoSwap(cmd) {
-  if (cmd==='A2B') { setVfoDisp('B',S.vfoA); send('vfo:0,1,'+S.vfoA+';'); }
-  else if (cmd==='B2A') { setVfoDisp('A',S.vfoB); send('vfo:0,0,'+S.vfoB+';'); }
-  else {
-    const t=S.vfoA; setVfoDisp('A',S.vfoB); setVfoDisp('B',t);
-    send('vfo:0,0,'+S.vfoB+';'); send('vfo:0,1,'+t+';');
-  }
+  bpIgnoreVfoUpdateUntil = 0; bpIgnoreVfoBUpdateUntil = 0;
+  send({ A2B: 'vfo_a_to_b_ex;', B2A: 'vfo_b_to_a_ex;', SWAP: 'vfo_swap_ex;' }[cmd]);
 }
 
 function setStep(btn, hz) {
