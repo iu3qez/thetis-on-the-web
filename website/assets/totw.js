@@ -2619,6 +2619,12 @@ function drawWF() {
     ctx.strokeStyle = '#58a6ff44'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(vx,0); ctx.lineTo(vx,H); ctx.stroke();
 
+    // VFO B line, dashed as on the spectrum; the TX line drawn next covers it in split
+    const bx = hzToX(S.vfoB);
+    ctx.strokeStyle = '#7d859088'; ctx.lineWidth = 1; ctx.setLineDash([2,2]);
+    ctx.beginPath(); ctx.moveTo(bx,0); ctx.lineTo(bx,H); ctx.stroke();
+    ctx.setLineDash([]);
+
     // TX line, as on the spectrum
     if (txMarkerShown()) {
       const tx = hzToX(S.txFreq);
