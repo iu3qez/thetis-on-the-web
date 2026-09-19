@@ -82,6 +82,27 @@ let _reconnectTimer = null;
 let _reconnectDelay = 1000;
 const _RECONNECT_MAX = 30000;
 
+// Every close of the TCI socket is kept for DIAG (#22). In Firefox the page gets the
+// server's code only when the server sends a close frame; otherwise the code is 1006.
+// With 1006, an error event before the close means Firefox failed the connection: a frame
+// it rejected (it then sends 1002 to the server) or a socket error. Neither: a TCP close
+// without a close frame. (dom/websocket/WebSocket.cpp, WebSocketImpl::OnServerClose and
+// ScheduleConnectionCloseEvents)
+const WS_CLOSES_KEPT = 50;
+const WSDIAG = { reconnects: 0, closes: [] };
+const WS_CLOSE_NAMES = {
+  1000: 'Normal Closure', 1001: 'Going Away', 1002: 'Protocol error', 1003: 'Unsupported Data',
+  1005: 'No Status Rcvd', 1006: 'Abnormal Closure', 1007: 'Invalid frame payload data',
+  1008: 'Policy Violation', 1009: 'Message Too Big', 1011: 'Internal Error',
+};
+
+function wsCloseText(r) {
+  return 'Disconnected: code ' + r.code + (WS_CLOSE_NAMES[r.code] ? ' ' + WS_CLOSE_NAMES[r.code] : '') +
+    (r.reason ? ' "' + r.reason + '"' : '') +
+    (r.wasClean ? ', clean' : ', not clean') + (r.errorEvent ? ', error event' : '') +
+    (r.openSeconds === null ? ', never opened' : ', open ' + r.openSeconds + ' s');
+}
+
 function toggleConn() {
   // A second click while the socket is still opening must not start another connection
   if (S.ws && S.ws.readyState === WebSocket.CONNECTING) return;
@@ -110,10 +131,12 @@ function connect() {
   dropSocket();
   log('sys', 'Connecting → ' + url);
   document.getElementById('connBtn').textContent = 'CONNECTING…';
+  let openedAt = 0, sawError = false;   // this socket's, for its close record
   try {
     S.ws = new WebSocket(url);
     S.ws.binaryType = 'arraybuffer';
     S.ws.onopen    = () => {
+      openedAt = Date.now();
       S.connected = true;
       _reconnectDelay = 1000;  // reset backoff on a successful open
       acquireWakeLock();
@@ -153,17 +176,30 @@ function connect() {
       }, 1500);
     };
     S.ws.onmessage = onMsg;
-    S.ws.onclose   = () => {
+    S.ws.onclose   = (ev) => {
+      const rec = {
+        at: new Date().toISOString(), code: ev.code, reason: ev.reason || '', wasClean: ev.wasClean,
+        errorEvent: sawError, openSeconds: openedAt ? +((Date.now() - openedAt) / 1000).toFixed(1) : null,
+        requested: !!S._userClosed,
+      };
+      WSDIAG.closes.push(rec);
+      if (WSDIAG.closes.length > WS_CLOSES_KEPT) WSDIAG.closes.shift();
+      if (!rec.requested) console.warn('TCI WebSocket closed', rec);
       S.connected = false; S.iqOn = false;
       if (S.mox)  { S.mox = false;  stopMicStream(); updTXRX(); log('err','⚠ PTT auto-released — connection lost'); }
       if (S.tune) { S.tune = false; updTune(); }
       if (S._pttWatchdog) { clearTimeout(S._pttWatchdog); S._pttWatchdog = null; }
-      setUI(false); log('sys','Disconnected'); stopRx(); stopSmeterPoll(); stopNetMonitor();
+      setUI(false); log(rec.requested ? 'sys' : 'err', wsCloseText(rec)); stopRx(); stopSmeterPoll(); stopNetMonitor();
       SM.dbm = null; SM.smoothDbm = -130; SM.peakDbm = -130;
       if (S._userClosed) releaseWakeLock();
       if (!S._userClosed) scheduleReconnect();
     };
-    S.ws.onerror   = () => { log('err','Connection error — is Thetis TCI Server running?'); setUI(false); };
+    // An open connection's error is reported by its close line
+    S.ws.onerror   = () => {
+      sawError = true;
+      if (!openedAt) log('err','Connection error — is Thetis TCI Server running?');
+      setUI(false);
+    };
   } catch(e) { log('err', 'Bad URL: ' + e.message); setUI(false); }
 }
 
@@ -175,7 +211,7 @@ function scheduleReconnect() {
   if (btn) btn.textContent = 'RECONNECT ' + Math.round(delay / 1000) + 's';
   _reconnectTimer = setTimeout(() => {
     _reconnectTimer = null;
-    if (!S._userClosed) connect();
+    if (!S._userClosed) { WSDIAG.reconnects++; connect(); }
   }, delay);
   _reconnectDelay = Math.min(_reconnectDelay * 2, _RECONNECT_MAX);
 }
@@ -875,7 +911,7 @@ let rxLastFadeAt = 0;              // when that buffer's provisional fade-out be
 
 async function startRx() {
   try {
-    if (S.audioCtx) { S.audioCtx.close(); }
+    if (S.audioCtx) closeRxContext(S.audioCtx, S.rxOut);
 
     // Reuse a pre-unlocked context if one was created by the iOS touch handler.
     // This is the only reliable way to get audio on iOS Safari — the context must
@@ -892,7 +928,10 @@ async function startRx() {
     S.analyser = S.audioCtx.createAnalyser();
     S.analyser.fftSize = 2048;
     S.analyser.smoothingTimeConstant = 0.89;
-    S.analyser.connect(S.audioCtx.destination);
+    // Output gain after the analyser: closeRxContext() ramps it to zero before the context closes
+    S.rxOut = S.audioCtx.createGain();
+    S.analyser.connect(S.rxOut);
+    S.rxOut.connect(S.audioCtx.destination);
 
     // On desktop Chrome the context may be suspended until first gesture — resume it.
     // On iOS this should already be 'running' if the pre-unlock path was taken.
@@ -973,9 +1012,24 @@ function stopRx() {
   S.rxOn = false;
   el('rxAuC').classList.remove('on');
   if (S.connected) send('audio_stop:0;');
-  if (S.audioCtx) { S.audioCtx.close(); S.audioCtx = null; S.analyser = null; }
+  if (S.audioCtx) { closeRxContext(S.audioCtx, S.rxOut); S.audioCtx = null; S.analyser = null; S.rxOut = null; }
   rxNextTime = 0;
   rxLastGain = null; rxLastFadeAt = 0;
+}
+
+// Closing a context stops its output at once: the output steps from the sample being
+// played to zero, and with loud audio that step is a full-scale click (#22). The ramp
+// takes the output to zero first; the context closes once the ramp and the device's
+// output latency have passed. A context that is not running has no output to ramp.
+const RX_STOP_FADE_S = 0.02;
+function closeRxContext(ctx, out) {
+  if (!out || ctx.state !== 'running') { ctx.close(); return; }
+  const t = ctx.currentTime;
+  out.gain.cancelScheduledValues(t);
+  out.gain.setValueAtTime(out.gain.value, t);
+  out.gain.linearRampToValueAtTime(0, t + RX_STOP_FADE_S);
+  const latency = ctx.outputLatency || ctx.baseLatency || 0;
+  setTimeout(() => ctx.close(), (RX_STOP_FADE_S + latency) * 1000 + 30);
 }
 
 // ── Binary frame dispatch ──
@@ -2212,11 +2266,16 @@ function refreshDiagnostics() {
   const summary = el('diagSummary');
   if (summary) {
     const item = (label, value, ok) => '<div style="background:#161b22;border:1px solid #30363d;border-radius:5px;padding:7px 9px;"><div style="font-size:9px;color:#7d8590;text-transform:uppercase;">' + escHtml(label) + '</div><div style="font-family:\'SF Mono\',monospace;color:' + (ok ? '#3fb950' : '#e3b341') + ';">' + escHtml(value) + '</div></div>';
+    const last = d.wsCloses[d.wsCloses.length - 1];
     summary.innerHTML =
       item('Connection', d.websocketState, d.connected) +
       item('Secure Context', d.secureContext ? 'yes' : 'no', d.secureContext) +
       item('Mic API', d.mediaDevices ? 'modern' : (d.legacyGetUserMedia ? 'legacy' : 'missing'), d.mediaDevices || d.legacyGetUserMedia) +
-      item('IQ Frames', String(d.iqFrames), d.iqFrames > 0);
+      item('IQ Frames', String(d.iqFrames), d.iqFrames > 0) +
+      item('Reconnects', String(d.wsReconnects), d.wsReconnects === 0) +
+      item('Last Close', last ? 'code ' + last.code + (last.errorEvent ? ', error event' : '') +
+        (last.openSeconds === null ? ', never opened' : ', open ' + last.openSeconds + ' s') : 'none',
+        !last || last.requested);
   }
   const text = el('diagText');
   if (text) text.value = JSON.stringify(d, null, 2);
@@ -3884,6 +3943,8 @@ function getDiagnostics() {
     websocketUrl: el('hostInput') ? el('hostInput').value : '',
     websocketState: S.ws ? ['CONNECTING','OPEN','CLOSING','CLOSED'][S.ws.readyState] : 'none',
     connected: S.connected,
+    wsReconnects: WSDIAG.reconnects,
+    wsCloses: WSDIAG.closes,
     rxAudio: S.rxOn,
     txMicArmed: S.txMicOn,
     txStreaming: S.micStreaming,
