@@ -42,3 +42,15 @@ There is only one drawn trace, and it does not know which of the two feeds it; t
 The property that distinguishes a trace that is being updated from one that is merely drawn.
 
 It does not coincide with data availability: a trace can stay visible indefinitely showing the last content received, if the flag that allows drawing it is not invalidated by the same condition that produces it. The reliable discriminator is a frame counter that advances between two readings, never the drawing state.
+
+### View window (finestra di vista)
+The frequency range the panadapter shows, defined by centre and span, shared by spectrum, waterfall, markers and pointer interactions.
+
+It is distinct from the available band, that is, what the spectrum source provides: with IQ samples the zoom crops the band locally, with bins the zoom becomes a span request to the server. When two parts of the panel compute their own window, they drift apart.
+
+## Scope
+
+### Zero cost (costo zero)
+The state of a feature that stays in the client without investment: it is moved as it is, wired to the new code only where that costs no work, and otherwise allowed to degrade.
+
+It is neither a supported feature nor a removed one. A fix needed to keep it alive beyond that limit is an operator decision, not an implementation detail.

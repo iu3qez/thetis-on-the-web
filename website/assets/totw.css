@@ -103,6 +103,8 @@ body {
   border-radius: 2px;
   transition: background 0.1s, color 0.1s;
 }
+/* Gap between the kHz digit and the 100 Hz digit: 7.123 4 reads as 7123.4 kHz at a glance */
+.vfo-freq .vfo-digit.sub-khz { margin-left: 0.3em; }
 .vfo-freq .vfo-digit:hover { background: #388bfd33; color: #79c0ff; }
 .vfo-freq.secondary .vfo-digit:hover { background: #30363d; color: #e6edf3; }
 .vfo-freq.secondary { font-size: 20px; color: #7d8590; }
@@ -136,6 +138,8 @@ body {
   font-family: 'SF Mono','Consolas',monospace;
 }
 .vbtn:hover { background: #30363d; color: #e6edf3; border-color: #388bfd; }
+/* SPLIT sits among the VFO buttons: a chip for its on state, sized like them */
+.vfo-swap-row .chip { padding: 3px 7px; }
 
 /* Step buttons */
 .step-row { display: flex; gap: 3px; align-self: center; }

@@ -14,7 +14,9 @@ function iqRequestedRate() {
 const S = {
   ws: null, connected: false,
   vfoA: 14225000, vfoB: 14196000,
+  txFreq: 0,  // tx_frequency from deskHPSDR: the TX VFO's frequency, without XIT
   mode: 'USB', mox: false, tune: false,
+  modeB: '',  // VFO B's mode, from modulation:1 and modulation_ex:1; empty until the server tells it
   step: 500, _pttWatchdog: null,
   audioCtx: null, rxOn: false, txMicOn: false, micStream: null, micCtx: null, micStreaming: false, txAnalyser: null,
   // IQ panadapter
@@ -29,7 +31,17 @@ const TG = { split: false, mute: false, mon: false, rx2: false };
 let bpDragHzOffset = 0;          // Hz offset during drag (read by drawSpec for preview)
 let bpDraggingInProgress = false; // suppress incoming VFO updates while dragging
 let bpIgnoreVfoUpdateUntil = 0;  // timestamp — ignore radio VFO echoes until this time
+let bpIgnoreVfoBUpdateUntil = 0; // the same for VFO B, so tuning A never hides a change of B
 let sliderLastValue = 0;         // tuning slider last position
+
+// Tune VFO A or B from the displays. On receiver 0, TCI channel 0 is VFO A and channel 1
+// is VFO B, which exists also with one receiver. Shift picks VFO B (issue 15).
+function tuneVfo(v, hz) {
+  setVfoDisp(v, hz);
+  send('vfo:0,' + (v === 'B' ? 1 : 0) + ',' + hz + ';');
+  if (v === 'B') bpIgnoreVfoBUpdateUntil = Date.now() + 1000;
+  else bpIgnoreVfoUpdateUntil = Date.now() + 1000;
+}
 let _wheelCommitTimer = null;    // debounce timer for wheel tuning
 let _wheelBaseVfo = 0;           // VFO baseline when wheel scrolling starts
 let _wheelLastSend = 0;          // timestamp of last VFO send (rate-limiter)
@@ -71,7 +83,19 @@ let _reconnectDelay = 1000;
 const _RECONNECT_MAX = 30000;
 
 function toggleConn() {
+  // A second click while the socket is still opening must not start another connection
+  if (S.ws && S.ws.readyState === WebSocket.CONNECTING) return;
   S.connected ? disconnect() : connect();
+}
+
+// Detach and close the previous socket: a socket left open keeps delivering audio
+// and IQ frames to onMsg, so every frame is played twice.
+function dropSocket() {
+  const old = S.ws;
+  if (!old) return;
+  old.onopen = old.onmessage = old.onclose = old.onerror = null;
+  try { old.close(); } catch (e) {}
+  S.ws = null;
 }
 
 function connect() {
@@ -83,6 +107,7 @@ function connect() {
     return;
   }
   S._userClosed = false;
+  dropSocket();
   log('sys', 'Connecting → ' + url);
   document.getElementById('connBtn').textContent = 'CONNECTING…';
   try {
@@ -94,6 +119,12 @@ function connect() {
       acquireWakeLock();
       setUI(true);
       log('sys', 'Connected — Thetis TCI online');
+      // modulation reports CWL and CWU both as CW. The first modulation_ex query subscribes
+      // this connection: deskHPSDR then follows every modulation with a modulation_ex.
+      // A subscribed client also gets VFO B's mode with one receiver; the second query asks
+      // for its current value, which the server does not send on its own.
+      send('modulation_ex:0;');
+      send('modulation_ex:1;');
       // Auto-start RX audio after Thetis sends 'ready'
       S._autoStartRx = true;
 
@@ -168,12 +199,12 @@ function onMsg(evt) {
 
 // Commands that fire many times/sec — suppress from log to avoid flood
 const _logSilence = new Set([
-  'vfo','if','rx_smeter','s_meter','smeter',
+  'vfo','if','rx_smeter','s_meter','smeter','rx_sensors',
   // Known Thetis startup broadcast messages — informational only, no action needed
   'protocol','device','receive_only','trx_count','channels_count',
   'vfo_limits','if_limits','modulations_list','dds',
   'tx_frequency','tx_frequency_thetis',
-  'rx_enable','rx_nr_enable','rx_nr_enable_ex',
+  'rx_nr_enable','rx_nr_enable_ex',
   'tx_power','swr',
   'rx_volume','rx_ctun_ex','rx_mute',
   'tx_profiles_ex','tx_profile_ex','calibration_ex',
@@ -207,13 +238,20 @@ function parseTCI(msg) {
         if (args[0]==='0' && args[1]==='0') {
           if (Date.now() >= bpIgnoreVfoUpdateUntil) setVfoDisp('A', v);
         }
-        if (args[0]==='0' && args[1]==='1') setVfoDisp('B', v);
+        if (args[0]==='0' && args[1]==='1') {
+          if (Date.now() >= bpIgnoreVfoBUpdateUntil) setVfoDisp('B', v);
+        }
       }
       break;
     case 'dds':
       if (args.length >= 2 && args[0] === '0') {
         S.iqCentre = parseInt(args[1]) || S.iqCentre;
       }
+      break;
+    case 'tx_frequency':
+      // Sent whenever the TX frequency changes: with split it is VFO B's, and it is also
+      // VFO B's when RX2 is the active receiver in the deskHPSDR GUI.
+      S.txFreq = parseInt(args[0]) || 0;
       break;
     case 'iq_samplerate':
       S.iqSR = parseInt(args[0]) || IQ_DEFAULT_SR;
@@ -226,34 +264,74 @@ function parseTCI(msg) {
       break;
     case 'modulation':
       if (args.length >= 2 && args[0] === '0') {
-        S.mode = args[1].toUpperCase();
+        S.mode = modeFromTci(args[1], S.mode);
         updMode();
-        // Re-apply active filter edges for the new mode
-        const ab = document.querySelector('#filtG .f-btn.active');
-        if (ab && ab.dataset.bw) {
-          const [lo, hi] = bwToLoHi(parseInt(ab.dataset.bw));
-          el('flo').value =lo; el('fhi').value =hi;
-        }
+        // No filter query: on a mode change deskHPSDR sends rx_filter_band right after modulation.
         // Immediately re-filter DX spots if Track Mode is active
         if (dxEnabled && (el('dxTrackMode') || {}).checked) dxApplyFilter();
+      } else if (args.length >= 2 && args[0] === '1') {
+        // Index 1 is VFO B's mode, which RX2 uses while it runs
+        S.modeB = modeFromTci(args[1], S.modeB);
+        updModeB();
+      }
+      break;
+    case 'modulation_ex':
+      // deskHPSDR extension, subscribed at connect: CWL and CWU named apart.
+      if (args.length >= 2 && args[0] === '0') {
+        S.mode = modeFromTci(args[1], S.mode);
+        updMode();
+      } else if (args.length >= 2 && args[0] === '1') {
+        S.modeB = modeFromTci(args[1], S.modeB);
+        updModeB();
       }
       break;
     case 'trx':
       if (args.length >= 2) { S.mox = args[1]==='true'; updTXRX(); }
       break;
+    case 'rx_volume':
+      // rx_volume:<rx>,<channel>,<dB>; deskHPSDR clamps volume to -40..0 dB (tci_clamp_volume),
+      // the same range as the AF sliders. Setting .value fires no input event, so no echo loop.
+      if (args.length >= 3 && args[1] === '0') {
+        const db = Math.round(parseFloat(args[2]));
+        if (Number.isFinite(db)) {
+          if (args[0] === '0') {
+            el('afSlider').value = db; el('afV').textContent = db + ' dB';
+            const ms = el('afSliderMobile'); if (ms) { ms.value = db; el('afVMobile').textContent = db + ' dB'; }
+          } else if (args[0] === '1') {
+            const r2 = el('rx2AfSlider'); if (r2) { r2.value = db; el('rx2V').textContent = db + ' dB'; }
+          }
+        }
+      }
+      break;
     case 'tune':
-      if (args.length >= 2) { S.tune = args[1]==='true'; updTune(); }
+      if (args.length >= 2) { S.tune = args[1]==='true'; updTune(); if (!S.tune) clearTuneWatchdog(); }
       break;
     case 'rx_filter_band':
       if (args.length >= 3 && args[0]==='0') {
         document.getElementById('flo').value = args[1];
         document.getElementById('fhi').value = args[2];
+        // Highlight the width button matching the radio's filter, or none
+        const bw = Math.abs(parseInt(args[2]) - parseInt(args[1]));
+        document.querySelectorAll('#filtG .f-btn').forEach(b =>
+          b.classList.toggle('active', parseInt(b.dataset.bw) === bw));
       }
       break;
 
 
+    case 'rx_enable':
+      // deskHPSDR answers every rx_enable request and sends every change of RX2, also one
+      // made from its own GUI or CAT.
+      if (args.length >= 2 && args[0] === '1') {
+        TG.rx2 = args[1] === 'true'; el('rx2C').classList.toggle('on', TG.rx2);
+      }
+      break;
     case 'split_enable':
-      TG.split = args[0]==='true'; el('splitC').classList.toggle('on', TG.split);
+      // deskHPSDR sends split_enable:<trx>,<bool>; the state is the last argument.
+      TG.split = args[args.length - 1]==='true'; el('splitC').classList.toggle('on', TG.split);
+      break;
+    case 'band_ex':
+      // Reply to a band button: band_ex:<rx>,<band>[,error]. VFO and mode arrive as broadcasts.
+      if (args[2] === 'error') log('err', 'Band ' + args[1] + 'm: change refused by the radio');
       break;
     case 'line_in':
       // Thetis broadcasting line_in state to other clients — just log it
@@ -270,6 +348,7 @@ function parseTCI(msg) {
       break;
 
     // S-meter: Thetis sends rx_smeter:receiver,vfo,dBm
+    case 'rx_sensors': // deskHPSDR answers rx_smeter with rx_sensors:<rx>,<dBm>
     case 'rx_smeter':
     case 's_meter':
     case 'smeter':
@@ -356,6 +435,13 @@ function updMode() {
     b.classList.toggle('active', b.dataset.m === S.mode));
 }
 
+// VFO B's mode is shown, not set: with one receiver deskHPSDR ignores a mode set on VFO B.
+// To work in another mode on B: A⇌B, change the mode on A, A⇌B.
+function updModeB() {
+  const e = el('vfoBMode');
+  if (e) e.textContent = S.modeB;
+}
+
 
 
 function updTune() {
@@ -397,10 +483,13 @@ function updBandButtons(hz) {
 }
 
 function setVfoDisp(vfo, hz) {
+  // Reject before assigning: a NaN stored in S.vfoA poisons every later step-tuning path.
+  if (!Number.isFinite(hz) || hz < 0) { log('err', 'VFO ' + vfo + ': invalid frequency ignored (' + hz + ')'); return; }
   if (vfo==='A') S.vfoA=hz; else S.vfoB=hz;
-  const mhz = hz / 1e6;
-  const whole = Math.floor(mhz).toString();
-  const dec = mhz.toFixed(4).split('.')[1]; // 4 decimal digits
+  // Digits come from the integer Hz, truncated below 100 Hz like a radio readout.
+  // Rounding the decimals while flooring the MHz showed 7 999 960 Hz as "7.0000".
+  const whole = Math.floor(hz / 1e6).toString();
+  const dec = String(Math.floor((hz % 1e6) / 100)).padStart(4, '0'); // 4 decimal digits
   const disp = el('vfo' + vfo + 'Disp');
 
   // Build digit spans: each digit gets a data-hz attribute for its positional value
@@ -420,7 +509,8 @@ function setVfoDisp(vfo, hz) {
   html += '.';
   // Decimal digits
   for (let i = 0; i < 4; i++) {
-    html += '<span class="vfo-digit" data-hz="' + decValues[i] + '" data-vfo="' + vfo + '">' + dec[i] + '</span>';
+    const cls = decValues[i] === 100 ? 'vfo-digit sub-khz' : 'vfo-digit';
+    html += '<span class="' + cls + '" data-hz="' + decValues[i] + '" data-vfo="' + vfo + '">' + dec[i] + '</span>';
   }
   html += '<span class="mhz"> MHz</span>';
   disp.innerHTML = html;
@@ -432,15 +522,35 @@ function setVfoDisp(vfo, hz) {
   saveState();
 }
 
-// Handle digit clicks: left-click = increment, right-click = decrement
+// Handle digit clicks: left-click = increment, right-click = decrement.
+// A double click anywhere on the VFO opens the frequency entry (ondblclick on the
+// display), so a digit click waits DIGIT_CLICK_MS before stepping: the second click
+// of a double click cancels the pending step, or undoes it when the double click
+// was slower than the wait but still within the system's double-click time.
+const DIGIT_CLICK_MS = 250;
+let _digitClick = null;  // { vfo, prevHz, timer, fired }
 document.addEventListener('click', function(e) {
   const d = e.target.closest('.vfo-digit');
   if (!d) return;
   const vfo = d.dataset.vfo;
+  if (e.detail > 1) {
+    const p = _digitClick;
+    _digitClick = null;
+    if (p && p.vfo === vfo) {
+      clearTimeout(p.timer);
+      if (p.fired) { setVfoDisp(vfo, p.prevHz); send('vfo:0,' + (vfo==='A'?'0':'1') + ',' + p.prevHz + ';'); }
+    }
+    return;
+  }
   const step = parseInt(d.dataset.hz);
-  const hz = Math.max(0, (vfo==='A' ? S.vfoA : S.vfoB) + step);
-  setVfoDisp(vfo, hz);
-  send('vfo:0,' + (vfo==='A'?'0':'1') + ',' + hz + ';');
+  const p = { vfo, prevHz: vfo==='A' ? S.vfoA : S.vfoB, fired: false };
+  p.timer = setTimeout(() => {
+    p.fired = true;
+    const hz = Math.max(0, (vfo==='A' ? S.vfoA : S.vfoB) + step);
+    setVfoDisp(vfo, hz);
+    send('vfo:0,' + (vfo==='A'?'0':'1') + ',' + hz + ';');
+  }, DIGIT_CLICK_MS);
+  _digitClick = p;
 });
 document.addEventListener('contextmenu', function(e) {
   const d = e.target.closest('.vfo-digit');
@@ -499,13 +609,15 @@ document.addEventListener('wheel', e => {
   send('vfo:0,'+(vfo==='A'?'0':'1')+','+hz+';');
 }, { passive: false });
 
+// A→B, B→A and A⇌B move the whole VFO, as deskHPSDR's own buttons do: band, frequency,
+// mode, filter and step. There is no reply; the result reaches every client, this one
+// included, as vfo, modulation, rx_filter_band, tx_frequency and split_enable. The displays
+// wait for those. A command within 200 ms of another TCI client's vfo set is ignored and
+// nothing changes. A tuning gesture's echo window still open would drop the result, so it
+// is closed here: the echoes of earlier steps arrive before the result, on the same socket.
 function vfoSwap(cmd) {
-  if (cmd==='A2B') { setVfoDisp('B',S.vfoA); send('vfo:0,1,'+S.vfoA+';'); }
-  else if (cmd==='B2A') { setVfoDisp('A',S.vfoB); send('vfo:0,0,'+S.vfoB+';'); }
-  else {
-    const t=S.vfoA; setVfoDisp('A',S.vfoB); setVfoDisp('B',t);
-    send('vfo:0,0,'+S.vfoB+';'); send('vfo:0,1,'+t+';');
-  }
+  bpIgnoreVfoUpdateUntil = 0; bpIgnoreVfoBUpdateUntil = 0;
+  send({ A2B: 'vfo_a_to_b_ex;', B2A: 'vfo_b_to_a_ex;', SWAP: 'vfo_swap_ex;' }[cmd]);
 }
 
 function setStep(btn, hz) {
@@ -519,30 +631,30 @@ function setStep(btn, hz) {
 }
 
 // ── BAND ──
-const bandDfltMode = {
-  '160m':'LSB','80m':'LSB','60m':'USB','40m':'LSB','30m':'USB',
-  '20m':'USB','17m':'USB','15m':'USB','12m':'USB','10m':'USB','6m':'USB'
-};
-document.querySelectorAll('.band-btn').forEach(b => b.addEventListener('click', () => {
-  document.querySelectorAll('.band-btn').forEach(x => x.classList.remove('active'));
-  b.classList.add('active');
-  const hz = parseInt(b.dataset.freq);
-  setVfoDisp('A', hz);
-  send('vfo:0,0,'+hz+';');
-  setMode(bandDfltMode[b.dataset.band]||'USB');
+// Only real band buttons carry data-band: the top-bar ⚙, DIAG and ? buttons share the
+// .band-btn class for styling and must not change band.
+// The band changes through deskHPSDR's band stack, as in its GUI: the radio returns to
+// the frequency, mode and filter last used on that band. VFO, mode and the active
+// button follow the broadcasts the server sends after the change.
+document.querySelectorAll('.band-btn[data-band]').forEach(b => b.addEventListener('click', () => {
+  send('band_ex:0,' + b.dataset.band.replace(/m$/, '') + ';');
 }));
 
 // ── MODE ──
+// modulation reports CWL and CWU both as CW. The sideband arrives in the modulation_ex that
+// follows it; until then keep the one the client knows for that VFO (prev), otherwise CWU,
+// which is what the server applies for a plain "cw".
+function modeFromTci(name, prev) {
+  const m = name.toUpperCase();
+  if (m === 'CW') return (prev === 'CWL' || prev === 'CWU') ? prev : 'CWU';
+  return m;
+}
+
 function setMode(m) {
   S.mode = m; updMode();
-  send('modulation:0,'+m+';');
-  // Re-apply active filter with correct lo/hi for the new mode
-  const activeBtn = document.querySelector('#filtG .f-btn.active');
-  if (activeBtn && activeBtn.dataset.bw) {
-    const [lo, hi] = bwToLoHi(parseInt(activeBtn.dataset.bw));
-    el('flo').value =lo; el('fhi').value =hi;
-    send('rx_filter_band:0,' + lo + ',' + hi + ';');
-  }
+  // Only the mode: the server restores the filter stored for the new mode. Sending a
+  // filter here also raced with the queued mode change (`iu3qez/deskhpsdr` #18).
+  send('modulation:0,' + m + ';');
   saveState();
   updateMobileBar(); // keep mobile bar mode readout current
 }
@@ -562,8 +674,8 @@ function bwToLoHi(bw) {
   const half = Math.round(bw / 2);
   if (['USB','DIGU'].includes(m))       return [100, 100 + bw];
   if (['LSB','DIGL'].includes(m))       return [-(100 + bw), -100];
-  if (['CWU'].includes(m))              return [600 - half, 600 + half];
-  if (['CWL'].includes(m))              return [-(600 + half), -(600 - half)];
+  // deskHPSDR centres CW filters on zero and applies the CW pitch itself
+  if (['CWU','CWL'].includes(m))        return [-half, half];
   if (['AM','SAM','DSB','NFM','FM'].includes(m)) return [-half, half];
   // Default: treat as USB
   return [100, 100 + bw];
@@ -632,6 +744,11 @@ function tog(k) {
 }
 
 // ── PTT / TUNE ──
+// TX safety timeout from Settings (cfgPttTimeout, minutes), shared by PTT and TUNE.
+function txTimeoutMinutes() {
+  return Math.max(1, parseInt(getSettings().pttTimeout) || 3);
+}
+
 function setPTT(on) {
   if (S.mox === on) return; // ignore duplicate events
   if (S._pttWatchdog) { clearTimeout(S._pttWatchdog); S._pttWatchdog = null; }
@@ -639,14 +756,21 @@ function setPTT(on) {
   updTXRX();
   send('trx:0,' + on + (on ? ',tci' : '') + ';');
   if (on) {
-    // 3-minute auto-release safety watchdog
+    // Auto-release safety watchdog
+    const minutes = txTimeoutMinutes();
     S._pttWatchdog = setTimeout(() => {
-      log('err', '⚠ PTT auto-released — 3 min timeout');
+      log('err', '⚠ PTT auto-released — ' + minutes + ' min timeout');
       setPTT(false);
-    }, 180000);
+    }, minutes * 60000);
     if (!S.txMicOn) {
       // Auto-arm mic on first PTT press
-      startTxMic().then(() => { if (S.mox) startMicStream(); });
+      startTxMic().then(armed => {
+        if (!S.mox) return;
+        if (armed) { startMicStream(); return; }
+        // Without a microphone the radio would transmit silence: release instead
+        log('err', '⚠ PTT released — TX microphone not available');
+        setPTT(false);
+      });
     } else {
       startMicStream();
     }
@@ -654,7 +778,23 @@ function setPTT(on) {
     stopMicStream();
   }
 }
-function togTune() { S.tune=!S.tune; updTune(); send('tune:0,'+S.tune+';'); }
+function clearTuneWatchdog() {
+  if (S._tuneWatchdog) { clearTimeout(S._tuneWatchdog); S._tuneWatchdog = null; }
+}
+function togTune() {
+  S.tune=!S.tune; updTune(); send('tune:0,'+S.tune+';');
+  clearTuneWatchdog();
+  if (S.tune) {
+    // TUNE keys a full carrier: release it after the same timeout as PTT
+    const minutes = txTimeoutMinutes();
+    S._tuneWatchdog = setTimeout(() => {
+      S._tuneWatchdog = null;
+      if (!S.tune) return;
+      log('err', '⚠ TUNE auto-released — ' + minutes + ' min timeout');
+      togTune();
+    }, minutes * 60000);
+  }
+}
 
 // ── SLIDERS ──
 function sl(k, v) {
@@ -664,7 +804,7 @@ function sl(k, v) {
 
     drive: () => { el('drV').textContent=v+'%';       send('drive:0,'+v+';'); },
 
-    rx2:   () => { el('rx2V').textContent=v;          send('rx_volume:1,'+(v-100)+';'); },
+    rx2:   () => { el('rx2V').textContent=v+' dB';    send('rx_volume:1,0,'+v+';'); },
   };
   if (map[k]) { map[k](); saveState(); }
 }
@@ -680,7 +820,9 @@ function setAnt(n) {
 }
 
 // ── RX2 / DIV ──
-function togRX2() { TG.rx2=!TG.rx2; el('rx2C').classList.toggle('on',TG.rx2); send('rx_enable:1,'+TG.rx2+';'); }
+// Only the request: the chip follows the rx_enable the server answers, since deskHPSDR
+// refuses the switch while transmitting.
+function togRX2() { send('rx_enable:1,' + !TG.rx2 + ';'); }
 
 // ── AUDIO ──
 async function togAudio(dir) {
@@ -1038,7 +1180,20 @@ function getTxWorkletUrl() {
 // ── TX MIC — device setup (button toggle) ──
 // Grabs the mic device and arms it. Actual streaming starts/stops
 // when Thetis sends line_in:0,true / line_in:0,false (on PTT).
-async function startTxMic() {
+// Arm the TX microphone once. A PTT press that arrives while arming is still in
+// progress waits for it instead of building a second AudioContext: a second call
+// used to replace S.micCtx under the first one, whose worklet then was not found.
+// Resolves true when the microphone is armed.
+function startTxMic() {
+  if (S.txMicOn) return Promise.resolve(true);
+  if (!S._txMicStarting) {
+    S._txMicStarting = armTxMic().finally(() => { S._txMicStarting = null; });
+  }
+  return S._txMicStarting;
+}
+
+async function armTxMic() {
+  let stream = null, ctx = null;
   try {
     const AudioCtxCtor = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtxCtor) throw new Error('This browser does not support the Web Audio API needed for TX audio.');
@@ -1048,32 +1203,31 @@ async function startTxMic() {
     if (!window.AudioWorkletNode) {
       throw new Error('AudioWorklet not supported — use a current Chrome/Edge/Firefox/Safari.');
     }
-    S.micStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: { sampleRate:48000, channelCount:1,
                echoCancellation:false, noiseSuppression:false, autoGainControl:false }
     });
-    S.micCtx = new AudioCtxCtor({ sampleRate: 48000 });
-    if (!S.micCtx.audioWorklet) {
+    ctx = new AudioCtxCtor({ sampleRate: 48000 });
+    if (!ctx.audioWorklet) {
       throw new Error('AudioWorklet not supported by this browser context.');
     }
-    if (S.micCtx.state === 'suspended') {
-      try { await S.micCtx.resume(); } catch(e) {}
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch(e) {}
     }
 
-    // Load the inline worklet module (once per context)
-    await S.micCtx.audioWorklet.addModule(getTxWorkletUrl());
+    // Load the inline worklet module into this context
+    await ctx.audioWorklet.addModule(getTxWorkletUrl());
 
-    const src = S.micCtx.createMediaStreamSource(S.micStream);
+    const src = ctx.createMediaStreamSource(stream);
 
     // TX analyser — feeds spectrum/waterfall during TX
-    S.txAnalyser = S.micCtx.createAnalyser();
-    S.txAnalyser.fftSize = 2048;
-    S.txAnalyser.smoothingTimeConstant = 0.89;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.89;
 
-    const node = new AudioWorkletNode(S.micCtx, 'totw-tx-mic', {
+    const node = new AudioWorkletNode(ctx, 'totw-tx-mic', {
       numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1,
     });
-    S._txWorkletNode = node;
 
     let txFrameCount = 0;
     node.port.onmessage = (e) => {
@@ -1116,22 +1270,30 @@ async function startTxMic() {
       }
     };
 
-    src.connect(S.txAnalyser);
+    src.connect(analyser);
     src.connect(node);
     // No destination connection needed — AudioWorkletNode runs on the audio
     // render thread regardless. We don't want mic playback either.
+    S.micStream = stream;
+    S.micCtx = ctx;
+    S.txAnalyser = analyser;
+    S._txWorkletNode = node;
     S.txMicOn = true;
     S.micStreaming = false; // streaming starts only when Thetis sends line_in:0,true
     el('txMcC').classList.add('on');
     log('sys', 'TX mic armed (AudioWorklet) — press PTT to transmit');
+    return true;
   } catch(e) {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (ctx) { try { ctx.close(); } catch(_) {} }
     const msg = e.name === 'NotAllowedError'
       ? 'Mic access DENIED — open browser site settings and allow microphone, then reload'
       : e.name === 'NotFoundError'
       ? 'No microphone found — check device connections'
       : 'Mic error: ' + e.message;
+    // Logged, not alert(): a modal dialog freezes the page while PTT may be keyed.
     log('err', msg);
-    alert(msg);
+    return false;
   }
 }
 
@@ -1220,7 +1382,9 @@ function drawAuMeter(smp) {
 }
 
 // ── S-METER ──
-let smCal = 20;  // IQ S-meter calibration offset in dB (tune so S9 ≈ -73 dBm)
+// Fixed offset of the fallback reading derived from the IQ spectrum (S9 ≈ -73 dBm).
+// The server's rx_sensors reading is already calibrated and never goes through it.
+const SM_IQ_OFFSET_DB = 20;
 const SM = {
   dbm: null,          // current dBm reading (null = no data)
   smoothDbm: -130,    // smoothed for needle
@@ -1311,7 +1475,7 @@ function smeterFromIQ() {
 
   // Average power per bin, then to dBm
   const avgDb = 10 * Math.log10((powerSum / binCount) + 1e-20);
-  const dbm = Math.max(-140, Math.min(0, avgDb + smCal));
+  const dbm = Math.max(-140, Math.min(0, avgDb + SM_IQ_OFFSET_DB));
 
   updateSmeter(dbm, 'iq');
 }
@@ -2116,6 +2280,15 @@ let peakHoldEnabled = false;
 let peakHoldBuf = null;  // Float32Array per-pixel peak values
 let wfTheme = 0;         // 0=classic 1=heat 2=gray 3=night
 
+// The TX marker shows where deskHPSDR transmits when that is VFO B. deskHPSDR sends
+// split_enable true exactly then (tci_send_split(), vfo_get_tx_vfo()): in split, and also
+// with RX2 active in its GUI. Comparing tx_frequency with VFO A alone is not enough: while
+// the operator tunes A, the client moves A at once and each tx_frequency confirms a step
+// already passed, so the line trailed A for one round trip with split off. On VFO A the
+// marker would only cover the VFO A line.
+const TX_MARKER_COLOR = '#f85149';
+function txMarkerShown() { return TG.split && S.txFreq > 0 && S.txFreq !== S.vfoA; }
+
 function drawSpec() {
   const cv = el('specC'); if (!cv) return;
   const W = cv.width || cv.parentElement.offsetWidth;
@@ -2330,6 +2503,17 @@ function drawSpec() {
       ctx.fillText('B ' + (S.vfoB / 1e6).toFixed(4), vfoBx + 3, 38);
     }
 
+    // ── TX marker, where the transmitter is when it is not on VFO A ──
+    const txX = txMarkerShown() ? hzToX(S.txFreq) : -1;
+    if (txX >= 0 && txX <= W) {
+      ctx.beginPath(); ctx.moveTo(txX, 0); ctx.lineTo(txX, H);
+      ctx.strokeStyle = TX_MARKER_COLOR; ctx.lineWidth = 1; ctx.stroke();
+      ctx.font = 'bold 10px SF Mono, Consolas, monospace';
+      ctx.fillStyle = TX_MARKER_COLOR;
+      ctx.textAlign = 'left';
+      ctx.fillText('TX ' + (S.txFreq / 1e6).toFixed(4), txX + 3, 48);
+    }
+
     // ── Bandwidth indicator ──
     ctx.font = '9px SF Mono, Consolas, monospace';
     ctx.fillStyle = '#484f58';
@@ -2470,6 +2654,19 @@ function drawWF() {
     const vx = hzToX(S.vfoA);
     ctx.strokeStyle = '#58a6ff44'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(vx,0); ctx.lineTo(vx,H); ctx.stroke();
+
+    // VFO B line, dashed as on the spectrum; the TX line drawn next covers it in split
+    const bx = hzToX(S.vfoB);
+    ctx.strokeStyle = '#7d859088'; ctx.lineWidth = 1; ctx.setLineDash([2,2]);
+    ctx.beginPath(); ctx.moveTo(bx,0); ctx.lineTo(bx,H); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // TX line, as on the spectrum
+    if (txMarkerShown()) {
+      const tx = hzToX(S.txFreq);
+      ctx.strokeStyle = TX_MARKER_COLOR; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(tx,0); ctx.lineTo(tx,H); ctx.stroke();
+    }
   }
 
   wfRAF=requestAnimationFrame(drawWF);
@@ -3715,7 +3912,8 @@ document.addEventListener('keydown', e => {
 
   if (e.code === 'Space') {
     e.preventDefault();
-    if (pttMode === 'toggle') { if (!e.repeat) setPTT(!S.mox); }
+    if (e.repeat) return; // keyboard autorepeat is not a new PTT request
+    if (pttMode === 'toggle') setPTT(!S.mox);
     else setPTT(true);
     return;
   }
@@ -3764,7 +3962,6 @@ function saveState() {
     const afEl = el('afSlider'), sgEl = el('specGainSlider');
     const wsEl = el('wfSpeedSlider'), fsEl = el('fftSmoothSlider');
     try {
-      const scEl = el('smCalSlider');
       localStorage.setItem(STORE_KEY, JSON.stringify({
         vfoA: S.vfoA,
         vfoB: S.vfoB,
@@ -3777,7 +3974,6 @@ function saveState() {
         specGain: sgEl ? parseInt(sgEl.value) : 20,
         wfSpeed: wsEl ? parseInt(wsEl.value) : 17,
         fftSmooth: fsEl ? parseInt(fsEl.value) : 90,
-        smCal: scEl ? parseInt(scEl.value) : 20,
         peakHold: peakHoldEnabled,
         wfTheme: wfTheme,
         specHeight: document.getElementById('specWrap') ? document.getElementById('specWrap').offsetHeight : 300,
@@ -3809,15 +4005,13 @@ function loadState() {
   if (p.filterLo != null) el('flo').value =p.filterLo;
   if (p.filterHi != null) el('fhi').value =p.filterHi;
   const afEl = el('afSlider');
-  if (afEl && p.afGain != null) { afEl.value = p.afGain; el('afV').textContent = p.afGain + ' dB'; }
+  if (afEl && p.afGain != null) { afEl.value = p.afGain; el('afV').textContent = afEl.value + ' dB'; }
   const sgEl = el('specGainSlider');
   if (sgEl && p.specGain != null) { specGain = p.specGain; sgEl.value = p.specGain; el('specGainV').textContent = (p.specGain >= 0 ? '+' : '') + p.specGain + 'dB'; }
   const wsEl = el('wfSpeedSlider');
   if (wsEl && p.wfSpeed != null) { wfSpeed = p.wfSpeed; wsEl.value = p.wfSpeed; el('wfSpeedV').textContent = p.wfSpeed; }
   const fsEl = el('fftSmoothSlider');
   if (fsEl && p.fftSmooth != null) { IQ.smooth = p.fftSmooth / 100; fsEl.value = p.fftSmooth; el('fftSpeedV').textContent = p.fftSmooth + '%'; }
-  const scEl = el('smCalSlider');
-  if (scEl && p.smCal != null) { smCal = p.smCal; scEl.value = p.smCal; el('smCalV').textContent = (p.smCal >= 0 ? '+' : '') + p.smCal + 'dB'; }
   if (p.peakHold != null) { peakHoldEnabled = p.peakHold; const btn = el('peakHoldBtn'); if (btn) btn.classList.toggle('active', peakHoldEnabled); }
   if (p.wfTheme != null) setWfTheme(p.wfTheme);
   const specWrapEl = document.getElementById('specWrap');
@@ -3896,6 +4090,10 @@ window.addEventListener('load', () => {
   (function() {
     const cv = el('specC');
     let dragging = false, dragStartX = 0, dragStartY = 0, dragMoved = false;
+    // VFO frequency at mousedown. The drag offset counts from the start of the drag, and
+    // deskHPSDR echoes every vfo sent, so S.vfoA moves under the pointer while dragging.
+    let dragBaseHz = 0;
+    let dragVfo = 'A';  // 'B' when the drag started with Shift
     let lastSendTime = 0;
     let touchStartTime = 0;
     let isVerticalSwipe = false;
@@ -3922,10 +4120,13 @@ window.addEventListener('load', () => {
     // ── Mouse: drag inside passband = tune; click outside = tune ──
     cv.addEventListener('mousedown', function(e) {
       if (!S.iqOn || !IQ.fftReady) return;
-      if (!isInPassband(e.clientX)) return;
+      // Shift takes VFO B from anywhere on the spectrum; VFO A is grabbed inside its passband
+      dragVfo = e.shiftKey ? 'B' : 'A';
+      if (dragVfo === 'A' && !isInPassband(e.clientX)) return;
       dragging = true;
       dragMoved = false;
       dragStartX = e.clientX;
+      dragBaseHz = dragVfo === 'B' ? S.vfoB : S.vfoA;
       bpDragHzOffset = 0;
       bpDraggingInProgress = true;
       cv.style.cursor = 'grabbing';
@@ -3941,19 +4142,19 @@ window.addEventListener('load', () => {
       const SR = S.iqSR || IQ_DEFAULT_SR;
       const hzPerPx = (SR / specZoom) / rect.width;
       bpDragHzOffset = Math.round(dx * hzPerPx);
-      const previewHz = snapToStep(S.vfoA + bpDragHzOffset, S.step);
-      previewVfoDisp('A', Math.max(0, previewHz));
+      const previewHz = snapToStep(dragBaseHz + bpDragHzOffset, S.step);
+      previewVfoDisp(dragVfo, Math.max(0, previewHz));
       // Rate-limit sends (max 20/sec)
       const now = Date.now();
       if (now - lastSendTime > 50) {
-        send('vfo:0,0,' + Math.max(0, previewHz) + ';');
+        send('vfo:0,' + (dragVfo === 'B' ? 1 : 0) + ',' + Math.max(0, previewHz) + ';');
         lastSendTime = now;
       }
-      // Auto-recenter IQ stream if VFO drifts near edges
+      // Auto-recenter IQ stream if VFO A drifts near edges; the IQ window follows A only
       const loHz = S.iqCentre - SR / 2;
       const hiHz = S.iqCentre + SR / 2;
       const margin = SR * 0.15;
-      if (previewHz < loHz + margin || previewHz > hiHz - margin) {
+      if (dragVfo === 'A' && (previewHz < loHz + margin || previewHz > hiHz - margin)) {
         send('dds:0,' + previewHz + ';');
         S.iqCentre = previewHz;
       }
@@ -3965,23 +4166,21 @@ window.addEventListener('load', () => {
       bpDraggingInProgress = false;
       cv.style.cursor = 'crosshair';
       if (dragMoved && bpDragHzOffset !== 0) {
-        const newVfo = window._previewHzA || Math.max(0, snapToStep(S.vfoA + bpDragHzOffset, S.step));
-        S.vfoA = newVfo;
-        setVfoDisp('A', newVfo);
-        send('vfo:0,0,' + newVfo + ';');
-        bpIgnoreVfoUpdateUntil = Date.now() + 1000;
+        const newVfo = window['_previewHz' + dragVfo] || Math.max(0, snapToStep(dragBaseHz + bpDragHzOffset, S.step));
+        tuneVfo(dragVfo, newVfo);
       } else if (!dragMoved && S.iqOn && IQ.fftReady) {
         const hz = Math.round(visRangeAtClientX(e.clientX));
-        if (hz > 0) { S.vfoA = hz; setVfoDisp('A', hz); send('vfo:0,0,' + hz + ';'); bpIgnoreVfoUpdateUntil = Date.now() + 1000; }
+        if (hz > 0) tuneVfo(dragVfo, hz);
       }
       bpDragHzOffset = 0;
-      window._previewHzA = null;
+      window['_previewHz' + dragVfo] = null;
       setTimeout(() => { dragMoved = false; }, 50);
     });
 
     // Click outside passband = click-to-tune
     cv.addEventListener('click', function(e) {
       if (dragMoved) return;
+      if (e.shiftKey) return;  // a Shift press always starts a drag: mouseup tuned VFO B
       if (!S.iqOn || !IQ.fftReady) return;
       if (isInPassband(e.clientX)) return;
       const hz = Math.round(visRangeAtClientX(e.clientX));
@@ -4106,12 +4305,12 @@ window.addEventListener('load', () => {
     const xFrac = (e.clientX - rect.left) / rect.width;
     const SR = S.iqSR || IQ_DEFAULT_SR;
     const hz = Math.round(S.iqCentre - SR / 2 + xFrac * SR);
-    if (hz > 0) { S.vfoA = hz; setVfoDisp('A', hz); send('vfo:0,0,' + hz + ';'); bpIgnoreVfoUpdateUntil = Date.now() + 1000; }
+    if (hz > 0) tuneVfo(e.shiftKey ? 'B' : 'A', hz);
   });
   el('wfC').style.cursor = 'crosshair';
 
-  // ── Scroll-to-tune (with debounce) / Ctrl+scroll-to-zoom on spectrum ──
-  el('specC').addEventListener('wheel', function(e) {
+  // ── Scroll-to-tune (with debounce) / Ctrl+scroll-to-zoom on spectrum and waterfall ──
+  function specWheel(e) {
     e.preventDefault();
     if (!S.iqOn || !IQ.fftReady) return;
     if (e.ctrlKey) {
@@ -4119,8 +4318,10 @@ window.addEventListener('load', () => {
       const rect = this.getBoundingClientRect();
       const xFrac = (e.clientX - rect.left) / rect.width;
       const SR = S.iqSR || IQ_DEFAULT_SR;
-      const vSR = SR / specZoom;
-      const vLo = (specZoomCentre || S.iqCentre) - vSR / 2;
+      // The waterfall always shows the full IQ span, the spectrum the zoomed view
+      const fullSpan = this.id === 'wfC';
+      const vSR = fullSpan ? SR : SR / specZoom;
+      const vLo = fullSpan ? S.iqCentre - SR / 2 : (specZoomCentre || S.iqCentre) - vSR / 2;
       const mouseHz = vLo + xFrac * vSR;
       const factor = e.deltaY < 0 ? 2 : 0.5;
       specZoom = Math.max(1, Math.min(32, specZoom * factor));
@@ -4128,41 +4329,47 @@ window.addEventListener('load', () => {
       if (specZoom > 1) specZoomCentre = mouseHz;
       else specZoomCentre = S.iqCentre;
     } else {
-      // Plain wheel = step tune — commit VFO immediately (rate-limited) and pan spectrum
-      const dir = e.deltaY < 0 ? 1 : -1;
-      const newVfo = Math.max(0, snapToStep(S.vfoA + dir * S.step, S.step));
-      S.vfoA = newVfo;
-      setVfoDisp('A', newVfo);
+      // Plain wheel = step tune VFO A, Shift+wheel = VFO B — commit immediately (rate-limited).
+      // macOS turns Shift+wheel into a horizontal scroll: deltaY is 0, the movement is in deltaX.
+      const onB = e.shiftKey;
+      const delta = onB ? (e.deltaY || e.deltaX) : e.deltaY;
+      const dir = delta < 0 ? 1 : -1;
+      const newVfo = Math.max(0, snapToStep((onB ? S.vfoB : S.vfoA) + dir * S.step, S.step));
+      setVfoDisp(onB ? 'B' : 'A', newVfo);
+      const sendVfo = () => {
+        send('vfo:0,' + (onB ? '1,' + S.vfoB : '0,' + S.vfoA) + ';');
+        if (onB) bpIgnoreVfoBUpdateUntil = Date.now() + 500; else bpIgnoreVfoUpdateUntil = Date.now() + 500;
+      };
 
-      // Pan zoomed spectrum to follow VFO on every tick so the cursor never hits the edge
-      if (specZoom > 1) specZoomCentre = newVfo;
+      // Pan zoomed spectrum to follow VFO A on every tick so the cursor never hits the edge
+      if (!onB && specZoom > 1) specZoomCentre = newVfo;
 
       const now = Date.now();
       // Rate-limit TCI sends to ~20 per second to avoid flooding the radio
       if (now - _wheelLastSend >= 50) {
-        send('vfo:0,0,' + newVfo + ';');
-        bpIgnoreVfoUpdateUntil = now + 500;
+        sendVfo();
         _wheelLastSend = now;
         if (_wheelCommitTimer) { clearTimeout(_wheelCommitTimer); _wheelCommitTimer = null; }
       } else {
         // Always queue a trailing send so the final resting frequency is committed
         if (_wheelCommitTimer) clearTimeout(_wheelCommitTimer);
         _wheelCommitTimer = setTimeout(() => {
-          send('vfo:0,0,' + S.vfoA + ';');
-          bpIgnoreVfoUpdateUntil = Date.now() + 500;
+          sendVfo();
           _wheelCommitTimer = null; _wheelLastSend = Date.now();
         }, 120);
       }
 
-      // Recenter IQ when VFO drifts within 25% of an edge — keeps IQ data fresh
+      // Recenter IQ when VFO A drifts within 25% of an edge — keeps IQ data fresh
       const SR = S.iqSR || IQ_DEFAULT_SR;
       const margin = SR * 0.25;
-      if (newVfo < S.iqCentre - SR / 2 + margin || newVfo > S.iqCentre + SR / 2 - margin) {
+      if (!onB && (newVfo < S.iqCentre - SR / 2 + margin || newVfo > S.iqCentre + SR / 2 - margin)) {
         S.iqCentre = newVfo;
         if (specZoom > 1) specZoomCentre = newVfo;
       }
     }
-  }, { passive: false });
+  }
+  el('specC').addEventListener('wheel', specWheel, { passive: false });
+  el('wfC').addEventListener('wheel', specWheel, { passive: false });
 
   // Double-click spectrum to reset zoom
   el('specC').addEventListener('dblclick', function(e) {

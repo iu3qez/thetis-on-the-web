@@ -60,17 +60,17 @@
     <div class="dock-handle"><span class="dock-title">Bands</span><span class="dock-collapse" title="Collapse/expand">▾</span></div>
     <div class="dock-body">
       <div style="display:flex;flex-wrap:wrap;gap:3px;">
-        <button class="band-btn" data-band="160m" data-freq="1900000">160m</button>
-        <button class="band-btn" data-band="80m"  data-freq="3700000">80m</button>
-        <button class="band-btn" data-band="60m"  data-freq="5330500">60m</button>
-        <button class="band-btn" data-band="40m"  data-freq="7200000">40m</button>
-        <button class="band-btn" data-band="30m"  data-freq="10130000">30m</button>
-        <button class="band-btn active" data-band="20m" data-freq="14225000">20m</button>
-        <button class="band-btn" data-band="17m"  data-freq="18130000">17m</button>
-        <button class="band-btn" data-band="15m"  data-freq="21300000">15m</button>
-        <button class="band-btn" data-band="12m"  data-freq="24940000">12m</button>
-        <button class="band-btn" data-band="10m"  data-freq="28500000">10m</button>
-        <button class="band-btn" data-band="6m"   data-freq="50200000">6m</button>
+        <button class="band-btn" data-band="160m">160m</button>
+        <button class="band-btn" data-band="80m">80m</button>
+        <button class="band-btn" data-band="60m">60m</button>
+        <button class="band-btn" data-band="40m">40m</button>
+        <button class="band-btn" data-band="30m">30m</button>
+        <button class="band-btn active" data-band="20m">20m</button>
+        <button class="band-btn" data-band="17m">17m</button>
+        <button class="band-btn" data-band="15m">15m</button>
+        <button class="band-btn" data-band="12m">12m</button>
+        <button class="band-btn" data-band="10m">10m</button>
+        <button class="band-btn" data-band="6m">6m</button>
       </div>
     </div>
   </div>
@@ -89,9 +89,10 @@
           <button class="vbtn" onclick="vfoSwap('A2B')">A→B</button>
           <button class="vbtn" onclick="vfoSwap('B2A')">B→A</button>
           <button class="vbtn" onclick="vfoSwap('SWAP')">A⇌B</button>
+          <button class="chip" id="splitC" onclick="tog('split')">SPLIT</button>
         </div>
         <div class="vfo-block">
-          <div class="vfo-label">VFO B</div>
+          <div class="vfo-label">VFO B <span id="vfoBMode" style="margin-left:6px;"></span></div>
           <div class="vfo-freq secondary" id="vfoBDisp" ondblclick="editFreq('B')">14.196<span class="mhz"> MHz</span></div>
           <input class="vfo-freq-input" id="vfoBIn" onblur="commitFreq('B')" onkeydown="freqKey(event,'B')" style="font-size:20px;width:180px;color:#7d8590;" />
         </div>
@@ -161,12 +162,6 @@
           <span class="smeter-sunit" id="smSunit">– – –</span>
         </div>
         <div style="text-align:center;margin-top:2px;"><span class="smeter-src" id="smSrc">waiting for tci</span></div>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:5px;">
-          <span class="ctrl-lbl">CAL</span>
-          <input type="range" min="-30" max="60" value="20" step="1" id="smCalSlider" style="flex:1;height:3px;cursor:pointer;"
-            oninput="smCal=parseInt(this.value);el('smCalV').textContent=(smCal>=0?'+':'')+smCal+'dB';saveState()">
-          <span id="smCalV" style="font-size:9px;color:#e6edf3;font-family:'SF Mono',monospace;width:36px;text-align:right;">+20dB</span>
-        </div>
       </div>
     </div>
 
@@ -213,7 +208,7 @@
         <div class="ctrl-head" style="display:flex;justify-content:space-between;margin-bottom:4px;">
           <span class="ctrl-lbl">AF GAIN</span><span class="ctrl-val" id="afV">-10 dB</span>
         </div>
-        <input type="range" min="-60" max="0" value="-10" step="1" id="afSlider" oninput="sl('af',this.value)" style="width:100%">
+        <input type="range" min="-40" max="0" value="-10" step="1" id="afSlider" oninput="sl('af',this.value)" style="width:100%">
       </div>
     </div>
 
@@ -358,7 +353,6 @@
       <div class="dock-body">
         <div class="chip-grid">
           <button class="chip" id="monC"    onclick="tog('mon')">MON</button>
-          <button class="chip" id="splitC"  onclick="tog('split')">SPLIT</button>
           <button class="chip" id="muteC"   onclick="tog('mute')">MUTE</button>
         </div>
       </div>
@@ -400,9 +394,9 @@
       <div class="dock-body">
         <button class="chip" id="rx2C" onclick="togRX2()" style="margin-bottom:6px;">RX2 ON</button>
         <div class="ctrl-head" style="display:flex;justify-content:space-between;margin-bottom:3px;">
-          <span class="ctrl-lbl">RX2 AF</span><span class="ctrl-val" id="rx2V">50</span>
+          <span class="ctrl-lbl">RX2 AF</span><span class="ctrl-val" id="rx2V">-20 dB</span>
         </div>
-        <input type="range" min="0" max="100" value="50" step="1" oninput="sl('rx2',this.value)" style="width:100%">
+        <input type="range" min="-40" max="0" value="-20" step="1" id="rx2AfSlider" oninput="sl('rx2',this.value)" style="width:100%">
       </div>
     </div>
 
@@ -838,17 +832,17 @@
   <!-- Band -->
   <span class="mdrw-lbl">Band</span>
   <div class="mdrw-row">
-    <button class="band-btn" data-band="160m" data-freq="1900000">160m</button>
-    <button class="band-btn" data-band="80m"  data-freq="3700000">80m</button>
-    <button class="band-btn" data-band="60m"  data-freq="5330500">60m</button>
-    <button class="band-btn" data-band="40m"  data-freq="7200000">40m</button>
-    <button class="band-btn" data-band="30m"  data-freq="10130000">30m</button>
-    <button class="band-btn" data-band="20m"  data-freq="14225000">20m</button>
-    <button class="band-btn" data-band="17m"  data-freq="18130000">17m</button>
-    <button class="band-btn" data-band="15m"  data-freq="21300000">15m</button>
-    <button class="band-btn" data-band="12m"  data-freq="24940000">12m</button>
-    <button class="band-btn" data-band="10m"  data-freq="28500000">10m</button>
-    <button class="band-btn" data-band="6m"   data-freq="50200000">6m</button>
+    <button class="band-btn" data-band="160m">160m</button>
+    <button class="band-btn" data-band="80m">80m</button>
+    <button class="band-btn" data-band="60m">60m</button>
+    <button class="band-btn" data-band="40m">40m</button>
+    <button class="band-btn" data-band="30m">30m</button>
+    <button class="band-btn" data-band="20m">20m</button>
+    <button class="band-btn" data-band="17m">17m</button>
+    <button class="band-btn" data-band="15m">15m</button>
+    <button class="band-btn" data-band="12m">12m</button>
+    <button class="band-btn" data-band="10m">10m</button>
+    <button class="band-btn" data-band="6m">6m</button>
   </div>
 
   <!-- Mode -->
@@ -891,7 +885,7 @@
   <span class="mdrw-lbl">AF Gain</span>
   <div class="mdrw-slider-row">
     <span style="font-size:11px;color:#7d8590;font-family:'SF Mono',monospace;">VOL</span>
-    <input type="range" min="-60" max="0" value="-10" step="1" id="afSliderMobile"
+    <input type="range" min="-40" max="0" value="-10" step="1" id="afSliderMobile"
       oninput="sl('af',this.value);el('afSlider').value=this.value;">
     <span id="afVMobile">-10 dB</span>
   </div>
