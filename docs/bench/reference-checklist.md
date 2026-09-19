@@ -106,6 +106,8 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 |---|---|---|---|
 | K1 | RX AUDIO acceso | Audio della radio nel browser | OK |
 | K2 | RX AUDIO spento | Audio fermo | OK |
+| K3 | RX AUDIO acceso su un segnale forte, poi RX AUDIO spento | Audio fermo senza clic | |
+| K4 | RX AUDIO acceso su un segnale forte; attendere che la connessione si chiuda da sola (#22, ogni 1,5-9 min) | Nessun clic; nel log TCI una riga rossa `Disconnected: code …` e poi `Reconnecting in 1.0s…`; in DIAG, Reconnects e Last Close aggiornati. Copiare il JSON di DIAG nel #22 | |
 
 ## L. Interfaccia
 
