@@ -2280,10 +2280,14 @@ let peakHoldEnabled = false;
 let peakHoldBuf = null;  // Float32Array per-pixel peak values
 let wfTheme = 0;         // 0=classic 1=heat 2=gray 3=night
 
-// The TX marker shows where deskHPSDR transmits when that is not VFO A: in split, or
-// with RX2 active in its GUI. On VFO A it would only cover the VFO A line.
+// The TX marker shows where deskHPSDR transmits when that is VFO B. deskHPSDR sends
+// split_enable true exactly then (tci_send_split(), vfo_get_tx_vfo()): in split, and also
+// with RX2 active in its GUI. Comparing tx_frequency with VFO A alone is not enough: while
+// the operator tunes A, the client moves A at once and each tx_frequency confirms a step
+// already passed, so the line trailed A for one round trip with split off. On VFO A the
+// marker would only cover the VFO A line.
 const TX_MARKER_COLOR = '#f85149';
-function txMarkerShown() { return S.txFreq > 0 && S.txFreq !== S.vfoA; }
+function txMarkerShown() { return TG.split && S.txFreq > 0 && S.txFreq !== S.vfoA; }
 
 function drawSpec() {
   const cv = el('specC'); if (!cv) return;
