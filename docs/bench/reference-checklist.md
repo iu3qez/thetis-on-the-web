@@ -8,11 +8,11 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | Campo | Valore |
 |---|---|
-| Commit del client | `fd0a96f`; B1, C1, C4, C6 e F6 riprovate su `941ee93`; E1-E4, F9 e F10 su `4fbac98`; C5, C11-C14, E5, E6, F7, F8 e F11-F13 su `eaab31d` |
+| Commit del client | `fd0a96f`; B1, C1, C4, C6 e F6 riprovate su `941ee93`; E1-E4, F9 e F10 su `4fbac98`; C5, C11-C14, D1-D3, E5, E6, F7, F8, F11-F13, K1, K2 e L1-L4 su `eaab31d` |
 | Browser e versione | Firefox, ultima versione per macOS al 2026-09-18 e al 2026-09-19 |
-| Apertura | file:// (A1), poi server locale `http://127.0.0.1:8765/totw.html`; C5, C11-C14, E5, E6, F7, F8 e F11-F13 da file:// |
+| Apertura | file:// (A1), poi server locale `http://127.0.0.1:8765/totw.html`; C5, C11-C14, D1-D3, E5, E6, F7, F8, F11-F13, K1, K2 e L1-L4 da file:// |
 | Stazione | `ubuntu.lan`, TCI 50001 |
-| Build di deskHPSDR | `master` a `3379cb8` (merge di upstream del 2026-09-18), compilata il 2026-09-18 alle 20:04, libwebsockets statica `d7f7fdeaf`; senza il branch locale `fix/tci-trx-owner-race`. E1-E4, F9 e F10 su `master` a `283cf6d` (merge della PR #25, con le PR #21, #22 e #23), compilata il 2026-09-18 alle 23:30. C5, C11-C14, E5, E6, F7, F8 e F11-F13 su `master` a `31250e8` (merge della PR #32, con le PR #26, #29 e #30), compilata il 2026-09-19 alle 04:43 |
+| Build di deskHPSDR | `master` a `3379cb8` (merge di upstream del 2026-09-18), compilata il 2026-09-18 alle 20:04, libwebsockets statica `d7f7fdeaf`; senza il branch locale `fix/tci-trx-owner-race`. E1-E4, F9 e F10 su `master` a `283cf6d` (merge della PR #25, con le PR #21, #22 e #23), compilata il 2026-09-18 alle 23:30. C5, C11-C14, D1-D3, E5, E6, F7, F8, F11-F13, K1, K2 e L1-L4 su `master` a `31250e8` (merge della PR #32, con le PR #26, #29 e #30), compilata il 2026-09-19 alle 04:43 |
 | Data | 2026-09-18 e 2026-09-19 |
 
 ## A. Apertura e connessione
@@ -45,7 +45,7 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | C7 | Click e drag sullo spettro | Sintonia alla frequenza sotto il cursore | OK |
 | C8 | Click sul waterfall | Sintonia alla frequenza sotto il cursore | OK |
 | C9 | Frecce su e giu' da tastiera | Un passo per pressione | OK |
-| C10 | Trackpad: swipe a due dita sul VFO | Annotare quanti passi produce uno swipe (difetto noto, riferimento per U7) | Diversi passi per swipe, non contati |
+| C10 | Trackpad: swipe a due dita sul VFO | Annotare quanti passi produce uno swipe (difetto noto, riferimento per U7) | Diversi passi per swipe, non contati; issue #21 |
 | C11 | Drag di VFO A dentro la sua banda passante, circa 50 px, poi rilasciare | VFO A si ferma sotto il cursore, anche in GUI, senza andare oltre il punto di rilascio | OK |
 | C12 | Shift+click sullo spettro e sul waterfall | VFO B va alla frequenza sotto il cursore, anche in GUI; VFO A non si muove | OK |
 | C13 | Shift+drag sullo spettro | VFO B segue il cursore, anche in GUI; VFO A e la finestra IQ non si muovono | OK |
@@ -55,9 +55,9 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | ID | Azione | Atteso | Esito |
 |---|---|---|---|
-| D1 | Ctrl+rotella sullo spettro | Zoom in e out centrato sul cursore | |
-| D2 | Pinch sul trackpad sullo spettro | Annotare il comportamento (difetto noto, riferimento per U7) | |
-| D3 | Doppio click sullo spettro | Zoom azzerato | |
+| D1 | Ctrl+rotella sullo spettro | Zoom in e out centrato sul cursore | KO, come D2: ogni evento rotella raddoppia o dimezza lo zoom qualunque sia `deltaY` (`totw.html:8393`); sul trackpad lo zoom va da 1x a 32x in un istante. Lo corregge U7 (KTD9), issue #20 |
+| D2 | Pinch sul trackpad sullo spettro | Annotare il comportamento (difetto noto, riferimento per U7) | Uguale a D1: su macOS il pinch arriva come rotella con Ctrl, e ogni evento raddoppia o dimezza lo zoom; ingestibile. Riferimento per U7, issue #20 |
+| D3 | Doppio click sullo spettro | Zoom azzerato | OK |
 
 ## E. Modo e filtro
 
@@ -104,17 +104,17 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | ID | Azione | Atteso | Esito |
 |---|---|---|---|
-| K1 | RX AUDIO acceso | Audio della radio nel browser | |
-| K2 | RX AUDIO spento | Audio fermo | |
+| K1 | RX AUDIO acceso | Audio della radio nel browser | OK |
+| K2 | RX AUDIO spento | Audio fermo | OK |
 
 ## L. Interfaccia
 
 | ID | Azione | Atteso | Esito |
 |---|---|---|---|
-| L1 | Cambiare tema UI | Tema applicato | |
-| L2 | Spostare e chiudere un pannello dock, ricaricare | Disposizione ricordata | |
-| L3 | Applicare un preset di layout | Layout applicato | |
-| L4 | Guadagno spettro, velocita' waterfall, smoothing, peak hold | Effetto visibile | |
+| L1 | Cambiare tema UI | Tema applicato | OK |
+| L2 | Spostare e chiudere un pannello dock, ricaricare | Disposizione ricordata | OK |
+| L3 | Applicare un preset di layout | Layout applicato | OK |
+| L4 | Guadagno spettro, velocita' waterfall, smoothing, peak hold | Effetto visibile | OK |
 
 ## M. Persistenza
 
