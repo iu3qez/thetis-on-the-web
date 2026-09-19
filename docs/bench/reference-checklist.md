@@ -86,7 +86,7 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | F10 | RX2 acceso e spento dalla GUI di deskHPSDR | Il pulsante RX2 ON di TOTW segue | OK |
 | F11 | Split acceso, VFO B diverso da VFO A | Linea rossa TX su VFO B nello spettro, con la frequenza di TX, e nel waterfall | |
 | F12 | Split acceso, Shift+rotella su VFO B | La linea TX segue VFO B | |
-| F13 | Split spento | Linea TX sparita; VFO B resta tratteggiato grigio su spettro e waterfall | |
+| F13 | Split spento, poi sintonizzare VFO A con rotella veloce e con drag sullo spettro | Linea TX sparita, anche durante la sintonia; VFO B resta tratteggiato grigio su spettro e waterfall | |
 
 ## J. Trasmissione, su carico fittizio
 
