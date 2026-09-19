@@ -8,12 +8,12 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 
 | Campo | Valore |
 |---|---|
-| Commit del client | `fd0a96f`; B1, C1, C4, C6 e F6 riprovate su `941ee93`; E1-E4, F9 e F10 su `4fbac98` |
-| Browser e versione | Firefox, ultima versione per macOS al 2026-09-18 |
-| Apertura | file:// (A1), poi server locale `http://127.0.0.1:8765/totw.html` |
+| Commit del client | `fd0a96f`; B1, C1, C4, C6 e F6 riprovate su `941ee93`; E1-E4, F9 e F10 su `4fbac98`; C5, C11-C14, E5, E6, F7, F8 e F11-F13 su `eaab31d` |
+| Browser e versione | Firefox, ultima versione per macOS al 2026-09-18 e al 2026-09-19 |
+| Apertura | file:// (A1), poi server locale `http://127.0.0.1:8765/totw.html`; C5, C11-C14, E5, E6, F7, F8 e F11-F13 da file:// |
 | Stazione | `ubuntu.lan`, TCI 50001 |
-| Build di deskHPSDR | `master` a `3379cb8` (merge di upstream del 2026-09-18), compilata il 2026-09-18 alle 20:04, libwebsockets statica `d7f7fdeaf`; senza il branch locale `fix/tci-trx-owner-race`. E1-E4, F9 e F10 su `master` a `283cf6d` (merge della PR #25, con le PR #21, #22 e #23), compilata il 2026-09-18 alle 23:30 |
-| Data | 2026-09-18 |
+| Build di deskHPSDR | `master` a `3379cb8` (merge di upstream del 2026-09-18), compilata il 2026-09-18 alle 20:04, libwebsockets statica `d7f7fdeaf`; senza il branch locale `fix/tci-trx-owner-race`. E1-E4, F9 e F10 su `master` a `283cf6d` (merge della PR #25, con le PR #21, #22 e #23), compilata il 2026-09-18 alle 23:30. C5, C11-C14, E5, E6, F7, F8 e F11-F13 su `master` a `31250e8` (merge della PR #32, con le PR #26, #29 e #30), compilata il 2026-09-19 alle 04:43 |
+| Data | 2026-09-18 e 2026-09-19 |
 
 ## A. Apertura e connessione
 
@@ -40,16 +40,16 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | C2 | Dopo B2, rotella sulle cifre del VFO | Un passo per scatto, console senza errori | OK |
 | C3 | Click e click destro su una cifra del VFO | Incremento e decremento di quella cifra | OK |
 | C4 | Doppio click sul VFO, scrivere una frequenza, Invio | Radio sulla frequenza scritta | OK dopo la correzione: doppio click ovunque sul VFO; il click singolo agisce dopo 250 ms. Prima: si apriva solo sulla scritta MHz |
-| C5 | VFO A e VFO B su bande e modi diversi; A→B, B→A, A⇌B | Si sposta tutto il VFO, anche in GUI: frequenza, banda, modo e filtro. I pulsanti di banda e di modo seguono VFO A; accanto a VFO B compare il suo modo | KO di usabilita': l'operatore non trova come selezionare VFO B. Il client non ha un VFO attivo; VFO B si sintonizza solo dalle sue cifre grigie sotto A→B (issue #15) |
+| C5 | VFO A e VFO B su bande e modi diversi; A→B, B→A, A⇌B | Si sposta tutto il VFO, anche in GUI: frequenza, banda, modo e filtro. I pulsanti di banda e di modo seguono VFO A; accanto a VFO B compare il suo modo | OK |
 | C6 | Rotella sullo spettro | Sintonia a passi, lo spettro segue | OK, spettro e waterfall; sul waterfall aggiunti dopo la prima esecuzione sintonia e zoom con la rotella |
 | C7 | Click e drag sullo spettro | Sintonia alla frequenza sotto il cursore | OK |
 | C8 | Click sul waterfall | Sintonia alla frequenza sotto il cursore | OK |
 | C9 | Frecce su e giu' da tastiera | Un passo per pressione | OK |
 | C10 | Trackpad: swipe a due dita sul VFO | Annotare quanti passi produce uno swipe (difetto noto, riferimento per U7) | Diversi passi per swipe, non contati |
-| C11 | Drag di VFO A dentro la sua banda passante, circa 50 px, poi rilasciare | VFO A si ferma sotto il cursore, anche in GUI, senza andare oltre il punto di rilascio | |
-| C12 | Shift+click sullo spettro e sul waterfall | VFO B va alla frequenza sotto il cursore, anche in GUI; VFO A non si muove | |
-| C13 | Shift+drag sullo spettro | VFO B segue il cursore, anche in GUI; VFO A e la finestra IQ non si muovono | |
-| C14 | Shift+rotella sullo spettro e sul waterfall (su macOS arriva come scroll orizzontale) | VFO B a passi nei due versi, anche in GUI; VFO A non si muove | |
+| C11 | Drag di VFO A dentro la sua banda passante, circa 50 px, poi rilasciare | VFO A si ferma sotto il cursore, anche in GUI, senza andare oltre il punto di rilascio | OK |
+| C12 | Shift+click sullo spettro e sul waterfall | VFO B va alla frequenza sotto il cursore, anche in GUI; VFO A non si muove | OK |
+| C13 | Shift+drag sullo spettro | VFO B segue il cursore, anche in GUI; VFO A e la finestra IQ non si muovono | OK |
+| C14 | Shift+rotella sullo spettro e sul waterfall (su macOS arriva come scroll orizzontale) | VFO B a passi nei due versi, anche in GUI; VFO A non si muove | OK |
 
 ## D. Zoom
 
@@ -67,8 +67,8 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | E2 | Selezionare tre larghezze di filtro | Filtro cambiato anche in GUI | OK |
 | E3 | Impostare LO e HI a mano, SET | Filtro personalizzato applicato | OK |
 | E4 | Dalla GUI di deskHPSDR: CWL, CWU, FM, LSB | Il pulsante di modo di TOTW segue, CWL e CWU distinti | OK |
-| E5 | Una sola RX, VFO B in un modo diverso da VFO A; DISCONNECT e CONNECT, poi A⇌B con VFO A in CWL | Accanto a VFO B il modo di VFO B della GUI, subito dopo la connessione; dopo A⇌B, CWL e non CWU | |
-| E6 | RX2 accesa, cambiare il modo di RX2 dalla GUI di deskHPSDR | Il modo accanto a VFO B segue | |
+| E5 | Una sola RX, VFO B in un modo diverso da VFO A; DISCONNECT e CONNECT, poi A⇌B con VFO A in CWL | Accanto a VFO B il modo di VFO B della GUI, subito dopo la connessione; dopo A⇌B, CWL e non CWU | OK |
+| E6 | RX2 accesa, cambiare il modo di RX2 dalla GUI di deskHPSDR | Il modo accanto a VFO B segue | OK |
 
 ## F. Controlli RX
 
@@ -80,13 +80,13 @@ Si esegue al banco sulla build indicata, con la radio accesa e il TX su carico f
 | F4 | Slider AF di RX2, se RX2 esiste | Volume RX2 segue in GUI | OK |
 | F5 | Segnale forte e banda silenziosa | S-meter segue il segnale | OK |
 | F6 | Slider CAL dell'S-meter | Lettura spostata dell'offset | Assente: slider CAL rimosso il 2026-09-18, non agiva piu' su nessuna lettura |
-| F7 | Split acceso e spento dalla GUI di deskHPSDR | Il pulsante SPLIT di TOTW segue | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
-| F8 | SPLIT da TOTW | Split segue in GUI | Non eseguita: l'operatore non capisce come si usa lo split in TOTW. SPLIT sta nel pannello Options e manda solo `split_enable`; VFO B non si sceglie e la frequenza di TX non e' mostrata (issue #15) |
+| F7 | Split acceso e spento dalla GUI di deskHPSDR | Il pulsante SPLIT di TOTW segue | OK |
+| F8 | SPLIT da TOTW | Split segue in GUI | OK |
 | F9 | RX2 ON da TOTW, acceso e spento | RX2 acceso e spento in GUI; il pulsante cambia solo dopo la risposta della radio | OK |
 | F10 | RX2 acceso e spento dalla GUI di deskHPSDR | Il pulsante RX2 ON di TOTW segue | OK |
-| F11 | Split acceso, VFO B diverso da VFO A | Linea rossa TX su VFO B nello spettro, con la frequenza di TX, e nel waterfall | |
-| F12 | Split acceso, Shift+rotella su VFO B | La linea TX segue VFO B | |
-| F13 | Split spento, poi sintonizzare VFO A con rotella veloce e con drag sullo spettro | Linea TX sparita, anche durante la sintonia; VFO B resta tratteggiato grigio su spettro e waterfall | |
+| F11 | Split acceso, VFO B diverso da VFO A | Linea rossa TX su VFO B nello spettro, con la frequenza di TX, e nel waterfall | OK |
+| F12 | Split acceso, Shift+rotella su VFO B | La linea TX segue VFO B | OK |
+| F13 | Split spento, poi sintonizzare VFO A con rotella veloce e con drag sullo spettro | Linea TX sparita, anche durante la sintonia; VFO B resta tratteggiato grigio su spettro e waterfall | OK |
 
 ## J. Trasmissione, su carico fittizio
 
